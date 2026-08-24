@@ -2,33 +2,62 @@ name: build
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
-# contents: write нужен GITHUB_TOKEN, чтобы оставлять комментарий к коммиту
-# с хвостом лога сборки (так лог читаем через api.github.com).
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: '25'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.14.3"
+          gradle-version: "9.5.1"
 
       - name: Build CraftNet
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-output.log
+
+      - name: Report build log
+        if: always()
         shell: bash
         run: |
-          set -o pipefail
-          gradle build --no-daemon --stacktrace 2>&1 | tee build-output.log
+          {
+            echo "### CraftNet CI: **${{ job.status }}**"
+            echo
+            echo "\`${GITHUB_SHA}\`"
+            echo
+            echo '```'
+            echo "== LOG HEAD =="
+            head -n 25 build-output.log || true
+            echo
+            echo "== KEY LINES =="
+            grep -n -B3 -A8 -E "FAILURE:|What went wrong|Caused by:|Could not|error:|> Task .*FAILED|Compilation failed|Execution failed|requires|incompatible" build-output.log | head -n 160 || true
+            echo
+            echo "== LOG TAIL =="
+            tail -n 20 build-output.log || true
+            echo '```'
+          } > report.md
+          python3 - <<'PYEOF'
+          data = open('report.md', encoding='utf-8').read()
+          if len(data) > 60000:
+              data = data[:60000] + "\n```\n(truncated)\n"
+          open('report.md', 'w', encoding='utf-8').write(data)
+          PYEOF
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -F body=@report.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload jar
         if: success()
@@ -36,27 +65,9 @@ jobs:
         with:
           name: craftnet-jar
           path: build/libs/*.jar
-          retention-days: 30
-
-      - name: Report build log
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          {
-            printf '### CraftNet CI: **%s**\n\n`%s`\n\n```\n' \
-              "${{ job.status }}" "${{ github.sha }}"
-            tail -n 180 build-output.log
-            printf '\n```\n'
-          } > report.md
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
-            -F body=@report.md >/dev/null || true
-
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: build-output.log
-          retention-days: 14
