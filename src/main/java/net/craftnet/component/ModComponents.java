@@ -16,6 +16,12 @@ public final class ModComponents {
 			CraftNet.id("banknote_value"),
 			ComponentType.<Integer>builder().codec(Codec.INT).build());
 
+	/** Метка «рабочего материала»: строка вида "ownerUuid:type". */
+	public static final ComponentType<String> JOB_TAG = Registry.register(
+			Registries.DATA_COMPONENT_TYPE,
+			CraftNet.id("job_tag"),
+			ComponentType.<String>builder().codec(Codec.STRING).build());
+
 	public static void register() {
 		// статическая инициализация
 	}

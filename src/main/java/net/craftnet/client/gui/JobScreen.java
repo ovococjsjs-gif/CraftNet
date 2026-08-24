@@ -1,5 +1,6 @@
 package net.craftnet.client.gui;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -9,15 +10,18 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 /**
- * Экран нанимателя: завод (бригадир) и кафе (бариста).
- * Активная смена заводчика/повара — мини-игра «сборка по схеме»:
- * сервер задаёт последовательность компонентов, игрок повторяет её кликами
- * по палитре. Три ошибки = брак (схема новая, прогресс деталей не сгорает).
+ * Экран нанимателя 2.0.
+ *
+ * ЗАВОД (бригадир): мини-игра «сборка по схеме» + цеховой заказ (крафт).
+ * КАФЕ (бариста): повар (крафт-заказ блюд) и курьер (доставка) — раздельно.
+ *
+ * Активный крафт-заказ: список целей с прогрессом по инвентарю игрока,
+ * список выданных материалов, кнопка «Сдать заказ», предупреждение о штрафе.
  */
 public class JobScreen extends CraftNetScreen {
 
-	private static final int PW = 250;
-	private static final int PH = 190;
+	private static final int PW = 288;
+	private static final int PH = 212;
 
 	public JobScreen(String screenId, NbtCompound data) {
 		super(screenId, Text.translatable(screenId.equals("job:cafe") ? "craftnet.job.cafe_title" : "craftnet.job.factory_title"), data);
@@ -38,21 +42,26 @@ public class JobScreen extends CraftNetScreen {
 	@Override
 	protected void renderContent(DrawContext ctx, int mx, int my, float delta) {
 		int x = px(), y = py();
-		UiKit.panel(ctx, x, y, PW, PH, UiKit.COL_PANEL);
+		UiKit.card(ctx, x, y, PW, PH, UiKit.COL_PANEL);
 		ctx.drawCenteredTextWithShadow(textRenderer, title, x + PW / 2, y - 12, UiKit.COL_ACCENT);
 
 		String bal = lng(data, "balance") + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 10 - textRenderer.getWidth(bal), y + 6, UiKit.COL_YELLOW, false);
 
 		if (i(data, "hasJob") == 1) {
-			renderActive(ctx, x, y + 16, mx, my);
+			renderActive(ctx, x + 8, y + 18, mx, my);
 			return;
 		}
 		if (isCafe()) {
-			renderOffer(ctx, x, y + 16, sub(data, "offerCook"), "Повар (мини-игра + разнос)", "cook", mx, my);
-			renderOffer(ctx, x, y + 100, sub(data, "offerCourier"), "Курьер (доставка еды)", "courier", mx, my);
+			renderOffer(ctx, x + 8, y + 18, PW - 16, 92, sub(data, "offerCook"),
+					"Повар · крафт-заказ кухни", "cook", mx, my);
+			renderOffer(ctx, x + 8, y + 116, PW - 16, 92, sub(data, "offerCourier"),
+					"Курьер · доставка пакетов", "courier", mx, my);
 		} else {
-			renderOffer(ctx, x, y + 16, sub(data, "offerFactory"), "Сборщик деталей (мини-игра)", "factory", mx, my);
+			renderOffer(ctx, x + 8, y + 18, PW - 16, 92, sub(data, "offerFactoryOrder"),
+					"Цеховой заказ · крафт из выданных материалов", "factory_order", mx, my);
+			renderOffer(ctx, x + 8, y + 116, PW - 16, 92, sub(data, "offerFactory"),
+					"Сборка по схеме · мини-игра", "factory", mx, my);
 		}
 	}
 
@@ -62,66 +71,103 @@ public class JobScreen extends CraftNetScreen {
 		NbtCompound job = sub(data, "active");
 		NbtCompound jd = sub(job, "data");
 		String type = str(job, "type");
-		UiKit.panel(ctx, x + 8, y, PW - 16, 152, UiKit.COL_PANEL_HI);
-		UiKit.label(ctx, textRenderer, x + 16, y + 6, "Смена: " + jobTitle(type), UiKit.COL_GREEN);
+		UiKit.card(ctx, x, y, PW - 16, 184, UiKit.COL_PANEL_HI);
+		UiKit.label(ctx, textRenderer, x + 10, y + 8, "Смена: " + jobTitle(type), UiKit.COL_GREEN);
 		long since = lng(job, "since");
 		long now = lng(data, "now");
-		long ttl = "cook".equals(type) ? 18000 : 12000;
+		long ttl = lng(jd, "ttl");
+		if (ttl <= 0) ttl = 12000;
 		long remainSec = Math.max(0, (ttl - (now - since)) / 20);
-		UiKit.label(ctx, textRenderer, x + 16, y + 17, "осталось: " + (remainSec / 60) + ":"
+		UiKit.label(ctx, textRenderer, x + 10, y + 20, "осталось: " + (remainSec / 60) + ":"
 				+ String.format("%02d", remainSec % 60) + "   награда: " + lng(jd, "pay") + " CR", UiKit.COL_TEXT_DIM);
 
-		if (("factory".equals(type) || "cook".equals(type))) {
-			if ("deliver".equals(str(jd, "stage"))) {
-				renderDeliverPhase(ctx, x, y, jd, mx, my);
-			} else if (str(jd, "seqNeed").isEmpty()) {
-				// легаси-формат смены (из старой версии) — просто предлагаем отменить
-				UiKit.label(ctx, textRenderer, x + 16, y + 34, "Формат задания устарел.", UiKit.COL_TEXT_DIM);
-				UiKit.label(ctx, textRenderer, x + 16, y + 45, "Отмени смену и возьми новую.", UiKit.COL_TEXT_DIM);
+		if ("factory".equals(type)) {
+			if (str(jd, "seqNeed").isEmpty()) {
+				UiKit.label(ctx, textRenderer, x + 10, y + 40, "Формат задания устарел — отмени смену.", UiKit.COL_TEXT_DIM);
 			} else {
-				renderAssembly(ctx, x, y, jd, mx, my);
+				renderAssembly(ctx, x, y + 6, jd, mx, my);
 			}
+		} else if ("factory_order".equals(type) || "cook".equals(type)) {
+			renderCraftActive(ctx, x, y, jd, mx, my);
 		} else {
 			renderDeliveryTarget(ctx, x, y, jd);
 		}
 
-		UiKit.button(ctx, textRenderer, x + PW - 96, y + 130, 80, 16, "Отменить", mx, my, true);
-		clickable(x + PW - 96, y + 130, 80, 16, () -> send("cancel", new NbtCompound()));
+		UiKit.button(ctx, textRenderer, x + PW - 114, y + 160, 96, 16, "Отменить", mx, my, true);
+		clickable(x + PW - 114, y + 160, 96, 16, () -> send("cancel", new NbtCompound()));
+		UiKit.label(ctx, textRenderer, x + 10, y + 162, "отмена или таймаут: штраф", UiKit.COL_RED);
 	}
 
 	private String jobTitle(String type) {
 		return switch (type) {
-			case "factory" -> "сборщик деталей";
-			case "cook" -> "повар";
+			case "factory" -> "сборщик деталей (мини-игра)";
+			case "factory_order" -> "цеховой заказ (крафт)";
+			case "cook" -> "повар (крафт-заказ)";
 			case "loader" -> "грузчик";
 			case "courier" -> "курьер";
 			default -> type;
 		};
 	}
 
+	/** Активный крафт-заказ: цели с прогрессом + выданные материалы. */
+	private void renderCraftActive(DrawContext ctx, int x, int y, NbtCompound jd, double mx, double my) {
+		if (rows(jd, "targets").isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 10, y + 40, "Формат задания устарел — отмени смену.", UiKit.COL_TEXT_DIM);
+			return;
+		}
+		UiKit.label(ctx, textRenderer, x + 10, y + 34, "Сдать (крафт из выданных ◆материалов):", UiKit.COL_ACCENT);
+		int ry = y + 46;
+		boolean allDone = true;
+		for (NbtCompound t : rows(jd, "targets")) {
+			Item item = itemOf(str(t, "id"));
+			int have = countClient(item);
+			int need = i(t, "need");
+			boolean ok = have >= need;
+			if (!ok) allDone = false;
+			UiKit.card(ctx, x + 8, ry, PW - 32, 18, UiKit.COL_PANEL);
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 11, ry + 1);
+			UiKit.label(ctx, textRenderer, x + 32, ry + 5, trim(str(t, "name"), 18), UiKit.COL_TEXT);
+			String pr = have + " / " + need;
+			ctx.drawText(textRenderer, Text.literal(pr), x + PW - 42 - textRenderer.getWidth(pr), ry + 5,
+					ok ? UiKit.COL_GREEN : UiKit.COL_YELLOW, false);
+			ry += 21;
+		}
+		// выданные материалы (справочно)
+		UiKit.label(ctx, textRenderer, x + 10, ry + 2, "выдано со склада:", UiKit.COL_TEXT_DIM);
+		ry += 12;
+		int ix = x + 10;
+		for (NbtCompound m : rows(jd, "mats")) {
+			Item item = itemOf(str(m, "id"));
+			if (item != null) ctx.drawItem(item.getDefaultStack(), ix, ry);
+			UiKit.label(ctx, textRenderer, ix + 2, ry + 17, "×" + i(m, "count"), UiKit.COL_TEXT_DIM);
+			ix += 24;
+		}
+		UiKit.button(ctx, textRenderer, x + 10, y + 160, 110, 16, "Сдать заказ", mx, my, allDone);
+		if (allDone) {
+			clickable(x + 10, y + 160, 110, 16, () -> send("handin", new NbtCompound()));
+		}
+	}
+
 	/** Мини-игра сборки: схема сверху, палитра компонентов снизу. */
 	private void renderAssembly(DrawContext ctx, int x, int y, NbtCompound jd, double mx, double my) {
 		int parts = i(jd, "parts");
 		int partsNeed = i(jd, "partsNeed");
-		UiKit.label(ctx, textRenderer, x + 16, y + 30,
-				(isCafe() ? "Готово порций: " : "Собрано деталей: ") + parts + " / " + partsNeed, UiKit.COL_TEXT);
+		UiKit.label(ctx, textRenderer, x + 10, y + 30,
+				"Собрано деталей: " + parts + " / " + partsNeed, UiKit.COL_TEXT);
 
-		// полоса прогресса
-		int barX = x + 16, barY = y + 41, barW = PW - 32, barH = 5;
+		int barX = x + 10, barY = y + 41, barW = PW - 36, barH = 5;
 		ctx.fill(barX, barY, barX + barW, barY + barH, UiKit.COL_PANEL);
 		int fill = partsNeed <= 0 ? 0 : (int) (barW * (parts / (double) partsNeed));
 		if (fill > 0) ctx.fill(barX, barY, barX + fill, barY + barH, UiKit.COL_GREEN);
 
-		// схема
 		String[] seq = str(jd, "seqNeed").split(",");
 		String haveStr = str(jd, "seqHave");
 		int have = haveStr.isEmpty() ? 0 : haveStr.split(",").length;
-		UiKit.label(ctx, textRenderer, x + 16, y + 52, "Схема:", UiKit.COL_TEXT_DIM);
-		int sx = x + 56, sy = y + 50;
+		UiKit.label(ctx, textRenderer, x + 10, y + 52, "Схема:", UiKit.COL_TEXT_DIM);
+		int sx = x + 50, sy = y + 50;
 		for (int i = 0; i < seq.length; i++) {
 			int slotX = sx + i * 20;
-			int bg = i < have ? 0xFF1E4620 : (i == have ? UiKit.COL_PANEL : UiKit.COL_PANEL);
-			ctx.fill(slotX, sy, slotX + 17, sy + 17, bg);
+			ctx.fill(slotX, sy, slotX + 17, sy + 17, UiKit.COL_PANEL);
 			if (i == have) drawFrame(ctx, slotX, sy, 17, UiKit.COL_YELLOW);
 			else if (i < have) drawFrame(ctx, slotX, sy, 17, UiKit.COL_GREEN);
 			else drawFrame(ctx, slotX, sy, 17, UiKit.COL_LINE);
@@ -130,13 +176,12 @@ public class JobScreen extends CraftNetScreen {
 		}
 
 		int errors = i(jd, "errors");
-		UiKit.label(ctx, textRenderer, x + 16, y + 70,
+		UiKit.label(ctx, textRenderer, x + 10, y + 72,
 				"ошибки: " + errors + "/3" + (errors == 2 ? "  — аккуратно!" : ""), UiKit.COL_TEXT_DIM);
 
-		// палитра
-		UiKit.label(ctx, textRenderer, x + 16, y + 86, "Компоненты (кликай по схеме):", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 10, y + 88, "Компоненты (кликай по схеме):", UiKit.COL_TEXT_DIM);
 		String[] cats = str(jd, "cats").split(",");
-		int px0 = x + 16, py0 = y + 98;
+		int px0 = x + 10, py0 = y + 100;
 		for (int ci = 0; ci < cats.length; ci++) {
 			int bx = px0 + ci * 26;
 			ctx.fill(bx, py0, bx + 22, py0 + 22, UiKit.COL_PANEL);
@@ -152,65 +197,66 @@ public class JobScreen extends CraftNetScreen {
 			});
 		}
 
-		UiKit.label(ctx, textRenderer, x + 16, y + 128, "схема растёт: каждая следующая на шаг длиннее", UiKit.COL_TEXT_DIM);
-	}
-
-	/** Фаза разноса (повар): список клиентов. */
-	private void renderDeliverPhase(DrawContext ctx, int x, int y, NbtCompound jd, double mx, double my) {
-		UiKit.label(ctx, textRenderer, x + 16, y + 30, "Готово! Разнеси порции:", UiKit.COL_YELLOW);
-		int ly = y + 44;
-		for (NbtCompound t : rows(jd, "targets")) {
-			String nm = str(t, "name").isEmpty() ? "Житель" : str(t, "name");
-			UiKit.label(ctx, textRenderer, x + 16, ly,
-					"• " + nm + "  [" + i(t, "x") + ", " + i(t, "z") + "] ~" + (int) lng(t, "dist") + "м",
-					UiKit.COL_TEXT);
-			ly += 11;
-		}
-		UiKit.label(ctx, textRenderer, x + 16, ly + 4, "цели подсвечены свечением; подай ПКМ с пакетом еды", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 10, y + 132, "схема растёт: каждая следующая на шаг длиннее", UiKit.COL_TEXT_DIM);
 	}
 
 	/** Цель доставки (грузчик/курьер). */
 	private void renderDeliveryTarget(DrawContext ctx, int x, int y, NbtCompound jd) {
 		NbtCompound t = sub(jd, "target");
 		String nm = str(t, "name").isEmpty() ? "житель" : str(t, "name");
-		UiKit.label(ctx, textRenderer, x + 16, y + 30, "доставка: " + nm, UiKit.COL_TEXT);
-		UiKit.label(ctx, textRenderer, x + 16, y + 42,
+		UiKit.label(ctx, textRenderer, x + 10, y + 34, "доставка: " + nm, UiKit.COL_TEXT);
+		UiKit.label(ctx, textRenderer, x + 10, y + 46,
 				"координаты: " + i(t, "x") + ", " + i(t, "y") + ", " + i(t, "z"), UiKit.COL_TEXT_DIM);
-		UiKit.label(ctx, textRenderer, x + 16, y + 54, "цель подсвечена белым свечением", UiKit.COL_TEXT_DIM);
-		UiKit.label(ctx, textRenderer, x + 16, y + 66, "награда: " + lng(jd, "pay") + " CR", UiKit.COL_YELLOW);
+		UiKit.label(ctx, textRenderer, x + 10, y + 58, "цель светится + стрелка-навигатор в HUD", UiKit.COL_ACCENT);
+		UiKit.label(ctx, textRenderer, x + 10, y + 70, "награда: " + lng(jd, "pay") + " CR", UiKit.COL_YELLOW);
 	}
 
 	// ------------------------------ офферы ------------------------------
 
-	private void renderOffer(DrawContext ctx, int x, int y, NbtCompound offer, String label, String type, double mx, double my) {
-		UiKit.panel(ctx, x + 8, y, PW - 16, 72, UiKit.COL_PANEL_HI);
+	private void renderOffer(DrawContext ctx, int x, int y, int w, int h, NbtCompound offer,
+			String label, String type, double mx, double my) {
+		UiKit.card(ctx, x, y, w, h, UiKit.COL_PANEL_HI);
 		if (offer.isEmpty()) {
-			UiKit.label(ctx, textRenderer, x + 16, y + 8, label + ": смен сейчас нет", UiKit.COL_TEXT_DIM);
-			UiKit.label(ctx, textRenderer, x + 16, y + 20, "загляни позже", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, y + 8, label, UiKit.COL_ACCENT);
+			UiKit.label(ctx, textRenderer, x + 10, y + 22, "смен сейчас нет — загляни позже", UiKit.COL_TEXT_DIM);
 			return;
 		}
-		UiKit.label(ctx, textRenderer, x + 16, y + 6, label, UiKit.COL_ACCENT);
-		UiKit.label(ctx, textRenderer, x + 16, y + 17, str(offer, "desc"), UiKit.COL_TEXT_DIM);
-		int ly = y + 30;
+		UiKit.label(ctx, textRenderer, x + 10, y + 6, label, UiKit.COL_ACCENT);
+		UiKit.label(ctx, textRenderer, x + 10, y + 17, str(offer, "desc"), UiKit.COL_TEXT_DIM);
+		int ly = y + 29;
+
+		if ("factory_order".equals(type) || "cook".equals(type)) {
+			// цели заказа: иконки + названия + количество
+			StringBuilder sb = new StringBuilder();
+			for (NbtCompound t : rows(offer, "targets")) {
+				if (sb.length() > 0) sb.append(", ");
+				sb.append(trim(str(t, "name"), 10)).append(" ×").append(i(t, "need"));
+			}
+			UiKit.label(ctx, textRenderer, x + 10, ly, "сдать: " + trim(sb.toString(), 42), UiKit.COL_TEXT);
+			ly += 11;
+			UiKit.label(ctx, textRenderer, x + 10, ly, "материалы выдаст склад (◆ помечены)", UiKit.COL_TEXT_DIM);
+			ly += 11;
+		}
 		if (i(offer, "partsNeed") > 0) {
-			UiKit.label(ctx, textRenderer, x + 16, ly,
-					("factory".equals(type) ? "деталей собрать: " : "порций приготовить и разнести: ")
-							+ i(offer, "partsNeed"), UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 10, ly, "деталей собрать: " + i(offer, "partsNeed"), UiKit.COL_TEXT);
 			ly += 11;
 		}
 		if (i(offer, "portions") > 0) {
-			UiKit.label(ctx, textRenderer, x + 16, ly, "порций: " + i(offer, "portions"), UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 10, ly, "пакетов: " + i(offer, "portions"), UiKit.COL_TEXT);
 			ly += 11;
 		}
 		if ("courier".equals(type) || "loader".equals(type)) {
 			NbtCompound t = sub(offer, "target");
 			String nm = str(t, "name").isEmpty() ? "жителю" : str(t, "name");
-			UiKit.label(ctx, textRenderer, x + 16, ly, "кому: " + nm + " (" + i(t, "x") + "," + i(t, "z") + ")", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, ly, "кому: " + nm + " (" + i(t, "x") + "," + i(t, "z") + ")", UiKit.COL_TEXT_DIM);
 			ly += 11;
 		}
-		UiKit.label(ctx, textRenderer, x + 16, y + 58, "награда: " + lng(offer, "pay") + " CR", UiKit.COL_GREEN);
-		UiKit.button(ctx, textRenderer, x + PW - 92, y + 52, 76, 15, "Принять", mx, my, true);
-		clickable(x + PW - 92, y + 52, 76, 15, () -> {
+		long ttlSec = lng(offer, "ttl") / 20;
+		UiKit.label(ctx, textRenderer, x + 10, ly, "срок: " + (ttlSec / 60) + " мин", UiKit.COL_TEXT_DIM);
+
+		UiKit.label(ctx, textRenderer, x + 10, y + h - 24, "награда: " + lng(offer, "pay") + " CR", UiKit.COL_GREEN);
+		UiKit.button(ctx, textRenderer, x + w - 86, y + h - 27, 76, 17, "Принять", mx, my, true);
+		clickable(x + w - 86, y + h - 27, 76, 17, () -> {
 			NbtCompound a = new NbtCompound();
 			a.putString("type", type);
 			send("accept", a);
@@ -219,8 +265,25 @@ public class JobScreen extends CraftNetScreen {
 
 	// ------------------------------ утилиты ------------------------------
 
+	private static int countClient(Item item) {
+		if (item == null) return 0;
+		MinecraftClient mc = MinecraftClient.getInstance();
+		if (mc == null || mc.player == null) return 0;
+		int n = 0;
+		var inv = mc.player.getInventory();
+		for (int i = 0; i < inv.size(); i++) {
+			ItemStack s = inv.getStack(i);
+			if (s.isOf(item)) n += s.getCount();
+		}
+		return n;
+	}
+
 	private static Item itemOf(String id) {
 		return Registries.ITEM.get(Identifier.tryParse(id));
+	}
+
+	private static String trim(String s, int max) {
+		return s.length() <= max ? s : s.substring(0, max - 1) + "…";
 	}
 
 	private static void drawFrame(DrawContext ctx, int x, int y, int size, int color) {

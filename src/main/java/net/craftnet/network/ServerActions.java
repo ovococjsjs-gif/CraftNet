@@ -450,6 +450,12 @@ public final class ServerActions {
 				}
 			}
 			case "assem_click" -> JobManager.assemClick(player, type, args.getString("id", ""));
+			case "handin" -> {
+				int rc = JobManager.handin(player);
+				if (rc == 2) {
+					player.sendMessage(Text.translatable("craftnet.job.missing_items"), true);
+				}
+			}
 			case "cancel" -> JobManager.cancel(server, player.getUuid(), false);
 			default -> {
 			}
@@ -469,6 +475,8 @@ public final class ServerActions {
 			boolean sky = p.getEntityWorld().isSkyVisible(p.getBlockPos());
 			d.putInt("gps", (y >= 55 || sky) ? 1 : 0);
 			d.putLong("bal", MoneyManager.balance(server, p.getUuid()));
+			NbtCompound nav = JobManager.navTarget(server, p.getUuid());
+			if (!nav.isEmpty()) d.put("jobNav", nav);
 			ServerPlayNetworking.send(p, new ModPackets.HudSyncS2CPayload(d));
 		}
 	}
@@ -720,6 +728,8 @@ public final class ServerActions {
 		if ("factory".equals(group)) {
 			NbtCompound o = JobManager.buildOffer(player, JobManager.T_FACTORY);
 			if (o != null) d.put("offerFactory", o);
+			NbtCompound oo = JobManager.buildOffer(player, JobManager.T_FACTORY_ORDER);
+			if (oo != null) d.put("offerFactoryOrder", oo);
 		} else {
 			NbtCompound oc = JobManager.buildOffer(player, JobManager.T_COOK);
 			if (oc != null) d.put("offerCook", oc);
