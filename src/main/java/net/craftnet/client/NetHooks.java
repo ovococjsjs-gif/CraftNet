@@ -22,6 +22,10 @@ public final class NetHooks {
 
 		ClientPlayNetworking.registerGlobalReceiver(ModPackets.ScreenSyncS2CPayload.ID, (payload, context) ->
 				context.client().execute(() -> onSync(payload)));
+
+		ClientPlayNetworking.registerGlobalReceiver(ModPackets.HudSyncS2CPayload.ID, (payload, context) ->
+				context.client().execute(() ->
+						net.craftnet.client.hud.CraftNetHud.update(payload.data())));
 	}
 
 	private static void openScreen(String screenId, net.minecraft.nbt.NbtCompound data) {

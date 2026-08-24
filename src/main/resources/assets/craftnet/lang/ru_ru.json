@@ -50,5 +50,7 @@
   "craftnet.cmd.signal.level": "Связь %s · вышка «%s» · %s м",
   "craftnet.job.part_ok": "Собрано: %s/%s",
   "craftnet.job.scrap": "Брак! Схема обновлена (3 ошибки)",
-  "craftnet.job.deliver_phase": "Готово! Разнеси еду %s жителям — они подсвечены"
+  "craftnet.job.deliver_phase": "Готово! Разнеси еду %s жителям — они подсвечены",
+  "key.craftnet.phone": "CraftNet: открыть телефон",
+  "key.category.craftnet.keys": "CraftNet"
 }

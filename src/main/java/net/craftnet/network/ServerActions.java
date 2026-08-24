@@ -358,6 +358,23 @@ public final class ServerActions {
 		}
 	}
 
+	/** Компактный HUD-пуш всем онлайн-игрокам (сигнал, деревня-ish, gps, баланс). Раз в 40 тиков. */
+	public static void pushHudSync(MinecraftServer server) {
+		for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+			VillageManager.SignalInfo sig = VillageManager.signalFor(p);
+			NbtCompound d = new NbtCompound();
+			d.putInt("sig", sig.level().tier);
+			d.putString("village", sig.villageName());
+			d.putInt("dist", sig.distance());
+			d.putInt("off", sig.offlineVillage() ? 1 : 0);
+			int y = p.getBlockPos().getY();
+			boolean sky = p.getEntityWorld().isSkyVisible(p.getBlockPos());
+			d.putInt("gps", (y >= 55 || sky) ? 1 : 0);
+			d.putLong("bal", MoneyManager.balance(server, p.getUuid()));
+			ServerPlayNetworking.send(p, new ModPackets.HudSyncS2CPayload(d));
+		}
+	}
+
 	// ============================== сборка синхронизации ==============================
 
 	private static NbtCompound buildSync(ServerPlayerEntity player, String screen) {

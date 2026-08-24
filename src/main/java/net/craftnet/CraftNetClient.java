@@ -2,28 +2,37 @@ package net.craftnet;
 
 import org.lwjgl.glfw.GLFW;
 
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 
 import net.craftnet.client.NetHooks;
 
 public class CraftNetClient implements ClientModInitializer {
 
-	private static boolean phoneKeyWasDown;
+	private static KeyBinding phoneKey;
 
 	@Override
 	public void onInitializeClient() {
 		NetHooks.register();
 
-		// Клавиша P = телефон. Опрашиваем GLFW напрямую, чтобы не зависеть
-		// от переезда KeyBinding.Category в 1.21.9+.
+		// Клавиша P = телефон. Полноценный KeyBinding (категория CraftNet),
+		// переназначается в настройках управления.
+		phoneKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.craftnet.phone",
+				InputUtil.Type.KEYSYM,
+				GLFW.GLFW_KEY_P,
+				KeyBinding.Category.create(CraftNet.id("keys"))));
+
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			if (client.getWindow() == null) return;
-			boolean down = GLFW.glfwGetKey(client.getWindow().getHandle(), GLFW.GLFW_KEY_P) == GLFW.GLFW_PRESS;
-			if (down && !phoneKeyWasDown && client.currentScreen == null && client.player != null) {
-				NetHooks.requestOpenPhone();
+			while (phoneKey.wasPressed()) {
+				if (client.currentScreen == null && client.player != null) {
+					NetHooks.requestOpenPhone();
+				}
 			}
-			phoneKeyWasDown = down;
 		});
 	}
 }

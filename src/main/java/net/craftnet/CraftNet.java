@@ -86,6 +86,7 @@ public class CraftNet implements ModInitializer {
 			if (tick % 600 == 0) StocksManager.tick(s);
 			VillageManager.tick(s, tick);
 			JobManager.tick(s, tick);
+			if (tick % 40 == 20) ServerActions.pushHudSync(s);
 			ServerActions.tickOpenScreens(s, tick);
 		});
 

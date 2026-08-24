@@ -61,9 +61,24 @@ public final class ModPackets {
 		}
 	}
 
+	/** Периодический компактный пуш состояния для HUD (сигнал, деревня, gps, баланс). */
+	public record HudSyncS2CPayload(NbtCompound data) implements CustomPayload {
+		public static final CustomPayload.Id<HudSyncS2CPayload> ID =
+				new CustomPayload.Id<>(CraftNet.id("hud_sync"));
+		public static final PacketCodec<RegistryByteBuf, HudSyncS2CPayload> CODEC =
+				PacketCodec.tuple(PacketCodecs.NBT_COMPOUND, HudSyncS2CPayload::data,
+						HudSyncS2CPayload::new);
+
+		@Override
+		public Id<? extends CustomPayload> getId() {
+			return ID;
+		}
+	}
+
 	public static void register() {
 		PayloadTypeRegistry.playS2C().register(OpenScreenS2CPayload.ID, OpenScreenS2CPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(ScreenSyncS2CPayload.ID, ScreenSyncS2CPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(HudSyncS2CPayload.ID, HudSyncS2CPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(ScreenActionC2SPayload.ID, ScreenActionC2SPayload.CODEC);
 
 		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(

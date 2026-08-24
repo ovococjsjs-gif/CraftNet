@@ -50,5 +50,7 @@
   "craftnet.cmd.signal.level": "%s signal · tower «%s» · %s m",
   "craftnet.job.part_ok": "Assembled: %s/%s",
   "craftnet.job.scrap": "Scrap! New schematic (3 errors)",
-  "craftnet.job.deliver_phase": "Done! Deliver food to %s glowing villagers"
+  "craftnet.job.deliver_phase": "Done! Deliver food to %s glowing villagers",
+  "key.craftnet.phone": "CraftNet: open phone",
+  "key.category.craftnet.keys": "CraftNet"
 }
