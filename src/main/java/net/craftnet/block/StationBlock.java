@@ -39,7 +39,7 @@ public class StationBlock extends Block {
 
 	@Override
 	protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
-		if (!world.isClient && player instanceof ServerPlayerEntity sp) {
+		if (!world.isClient() && player instanceof ServerPlayerEntity sp) {
 			ServerActions.openScreen(sp, kind.screen, pos);
 		}
 		return ActionResult.SUCCESS;

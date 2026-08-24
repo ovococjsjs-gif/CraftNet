@@ -79,7 +79,7 @@ public final class VillageManager {
 
 	/** Уровень связи для игрока: по ближайшей ОНЛАЙН деревне; офлайн-деревня рядом → пометка. */
 	public static SignalInfo signalFor(ServerPlayerEntity player) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return new SignalInfo(SignalLevel.NONE, "", -1, false);
 		BlockPos pos = player.getBlockPos();
 		Optional<NbtCompound> online = nearest(server, pos, true);
@@ -112,7 +112,7 @@ public final class VillageManager {
 
 	/** Найти ближайшую деревню и зарегистрировать (+ вышка). Вызывается редко. */
 	public static void scanAround(ServerPlayerEntity player) {
-		if (!(player.getWorld() instanceof ServerWorld world)) return;
+		if (!(player.getEntityWorld() instanceof ServerWorld world)) return;
 		MinecraftServer server = world.getServer();
 		try {
 			// skipReferencedStructures=true: ищем только по сгенерированным чанкам —
@@ -296,7 +296,7 @@ public final class VillageManager {
 
 	/** Список деревень для GPS (12 ближайших, онлайн-статус). */
 	public static List<NbtCompound> villagesForGps(ServerPlayerEntity player) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return List.of();
 		BlockPos pos = player.getBlockPos();
 		List<NbtCompound> all = villages(server);

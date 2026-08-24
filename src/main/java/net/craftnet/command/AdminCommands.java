@@ -4,6 +4,8 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.LongArgumentType;
 
 import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.permission.Permission;
+import net.minecraft.command.permission.PermissionLevel;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -14,6 +16,9 @@ import net.craftnet.jobs.JobManager;
 import net.craftnet.village.VillageManager;
 
 public final class AdminCommands {
+	/** Аналог старого hasPermissionLevel(2) из 1.21.9+: права гейм-мастера. */
+	private static final Permission OP = new Permission.Level(PermissionLevel.GAMEMASTERS);
+
 	private AdminCommands() {}
 
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
@@ -35,7 +40,7 @@ public final class AdminCommands {
 					return 1;
 				}))
 
-				.then(CommandManager.literal("money").requires(s -> s.hasPermissionLevel(2))
+				.then(CommandManager.literal("money").requires(s -> s.getPermissions().hasPermission(OP))
 						.then(CommandManager.literal("add")
 								.then(CommandManager.argument("player", EntityArgumentType.player())
 										.then(CommandManager.argument("amount", LongArgumentType.longArg(0))
@@ -58,7 +63,7 @@ public final class AdminCommands {
 													return 1;
 												})))))
 
-				.then(CommandManager.literal("village").requires(s -> s.hasPermissionLevel(2))
+				.then(CommandManager.literal("village").requires(s -> s.getPermissions().hasPermission(OP))
 						.then(CommandManager.literal("rescan").executes(ctx -> {
 							ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
 							VillageManager.scanAround(p);
@@ -75,7 +80,7 @@ public final class AdminCommands {
 							return 1;
 						})))
 
-				.then(CommandManager.literal("tower").requires(s -> s.hasPermissionLevel(2))
+				.then(CommandManager.literal("tower").requires(s -> s.getPermissions().hasPermission(OP))
 						.then(CommandManager.literal("spawn").executes(ctx -> {
 							ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
 							var v = VillageManager.registerVillage(ctx.getSource().getServer(), p.getBlockPos());
@@ -84,7 +89,7 @@ public final class AdminCommands {
 							return 1;
 						})))
 
-				.then(CommandManager.literal("job").requires(s -> s.hasPermissionLevel(2))
+				.then(CommandManager.literal("job").requires(s -> s.getPermissions().hasPermission(OP))
 						.then(CommandManager.literal("cancel")
 								.then(CommandManager.argument("player", EntityArgumentType.player())
 										.executes(ctx -> {
@@ -94,7 +99,7 @@ public final class AdminCommands {
 											return 1;
 										}))))
 
-				.then(CommandManager.literal("stocktick").requires(s -> s.hasPermissionLevel(2))
+				.then(CommandManager.literal("stocktick").requires(s -> s.getPermissions().hasPermission(OP))
 						.executes(ctx -> {
 							net.craftnet.econ.StocksManager.tick(ctx.getSource().getServer());
 							ctx.getSource().sendFeedback(() -> Text.literal("Биржа: новый тик цен"), false);

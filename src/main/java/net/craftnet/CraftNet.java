@@ -74,7 +74,7 @@ public class CraftNet implements ModInitializer {
 
 		// ПКМ по NPC персонала / целевым жителям
 		UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-			if (world.isClient) return ActionResult.PASS;
+			if (world.isClient()) return ActionResult.PASS;
 			if (!(player instanceof ServerPlayerEntity sp)) return ActionResult.PASS;
 			return ServerActions.handleEntityInteract(sp, entity);
 		});

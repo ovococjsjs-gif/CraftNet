@@ -31,7 +31,7 @@ public final class ModItems {
 			new Item.Settings().maxCount(16));
 
 	/** Творческая вкладка мода. */
-	public static final ItemGroup CRAFTNET_GROUP = Registry.register(Registries.ITEM_GROUP, itemKey("craftnet"),
+	public static final ItemGroup CRAFTNET_GROUP = Registry.register(Registries.ITEM_GROUP, net.craftnet.CraftNet.id("craftnet"),
 			FabricItemGroup.builder()
 					.icon(() -> new ItemStack(PHONE))
 					.displayName(Text.translatable("itemGroup.craftnet.tab"))

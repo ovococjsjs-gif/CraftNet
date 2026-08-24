@@ -16,7 +16,7 @@ public class PhoneItem extends Item {
 
 	@Override
 	public ActionResult use(World world, PlayerEntity user, Hand hand) {
-		if (!world.isClient && user instanceof ServerPlayerEntity sp) {
+		if (!world.isClient() && user instanceof ServerPlayerEntity sp) {
 			ServerActions.openScreen(sp, "phone", null);
 		}
 		return ActionResult.SUCCESS;

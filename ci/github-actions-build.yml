@@ -5,9 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# GITHUB_TOKEN нужен только для того, чтобы шаг "Report build log"
-# мог оставить комментарий с выжимкой лога к коммиту (логи Actions
-# бывает сложно скачать извне).
+# contents: write нужен шагу отчёта, чтобы публиковать комментарий к коммиту.
 permissions:
   contents: write
 
@@ -18,8 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1.21.11-era Loom 1.17.x рассчитан на Gradle 9.x и JDK 25
-      # (как в официальном шаблоне fabric-example-mod, ветка 1.21.11).
+      # Стек 1.21.11-эры: Loom(remap) + Gradle 9.x + JDK 25 (как в официальном
+      # шаблоне fabric-example-mod, ветка 1.21.11). Компиляция — в target 21.
       - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
@@ -31,41 +29,18 @@ jobs:
         with:
           gradle-version: "9.5.1"
 
+      # Вся логика пайплайна — в скриптах ci/ внутри репозитория: их можно
+      # править обычным пушем кода, этот workflow потом менять не понадобится.
       - name: Build CraftNet
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-output.log
+        run: bash ci/ci-build.sh
 
-      # Выжимка лога (заголовок, ключевые строки ошибок, хвост) уходит
-      # в комментарий к коммиту — её можно читать через GitHub API/UI,
-      # не скачивая полные логи рана.
       - name: Report build log
         if: always()
         shell: bash
-        run: |
-          {
-            echo "### CraftNet CI: **${{ job.status }}**"
-            echo
-            echo "\`${GITHUB_SHA}\`"
-            echo
-            echo '```'
-            echo "== LOG HEAD =="
-            head -n 25 build-output.log || true
-            echo
-            echo "== KEY LINES =="
-            grep -n -B3 -A8 -E "FAILURE:|What went wrong|Caused by:|Could not|error:|> Task .*FAILED|Compilation failed|Execution failed|requires|incompatible" build-output.log | head -n 160 || true
-            echo
-            echo "== LOG TAIL =="
-            tail -n 20 build-output.log || true
-            echo '```'
-          } > report.md
-          python3 - <<'PYEOF'
-          data = open('report.md', encoding='utf-8').read()
-          if len(data) > 60000:
-              data = data[:60000] + "\n```\n(truncated)\n"
-          open('report.md', 'w', encoding='utf-8').write(data)
-          PYEOF
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -F body=@report.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_JOB_STATUS: ${{ job.status }}
+        run: bash ci/ci-report.sh
 
       - name: Upload jar
         if: success()

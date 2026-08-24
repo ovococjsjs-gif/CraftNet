@@ -1,6 +1,6 @@
 package net.craftnet.client.gl;
 
-import net.minecraft.client.gl.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.gl.RenderPipelines;
 
 /** Тонкий фасад — чтобы легко править, если константа переименуется. */

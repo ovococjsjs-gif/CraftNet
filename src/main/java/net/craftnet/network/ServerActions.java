@@ -126,7 +126,7 @@ public final class ServerActions {
 	// ============================== телефон ==============================
 
 	private static void handlePhone(ServerPlayerEntity player, String action, NbtCompound args) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		OpenCtx ctx = OPEN.get(player.getUuid());
 		switch (action) {
@@ -166,7 +166,7 @@ public final class ServerActions {
 	}
 
 	private static void phoneBuy(ServerPlayerEntity player, NbtCompound args) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		String id = args.getString("id", "");
 		int count = args.getInt("count", 1);
@@ -208,7 +208,7 @@ public final class ServerActions {
 	}
 
 	private static void stockOp(ServerPlayerEntity player, NbtCompound args, boolean buy) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		String id = args.getString("id", "");
 		int n = args.getInt("n", 1);
@@ -233,7 +233,7 @@ public final class ServerActions {
 	// ============================== ПВЗ ==============================
 
 	private static void handlePvz(ServerPlayerEntity player, String action, NbtCompound args) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		switch (action) {
 			case "claim" -> {
@@ -291,7 +291,7 @@ public final class ServerActions {
 	private static final int[] DENOMS = {1000, 500, 100, 50, 10, 5, 1};
 
 	private static void handleBank(ServerPlayerEntity player, String action, NbtCompound args) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		switch (action) {
 			case "cashout" -> {
@@ -337,7 +337,7 @@ public final class ServerActions {
 	// ============================== работы ==============================
 
 	private static void handleJob(ServerPlayerEntity player, String type, String action, NbtCompound args) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
 		switch (action) {
 			case "accept" -> {
@@ -366,7 +366,7 @@ public final class ServerActions {
 	// ============================== сборка синхронизации ==============================
 
 	private static NbtCompound buildSync(ServerPlayerEntity player, String screen) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		NbtCompound d = new NbtCompound();
 		if (server == null) return d;
 		d.putLong("balance", MoneyManager.balance(server, player.getUuid()));
@@ -391,10 +391,10 @@ public final class ServerActions {
 
 		// GPS: под землёй без прямого неба спутники не ловят
 		int y = player.getBlockPos().getY();
-		boolean sky = player.getWorld().isSkyVisible(player.getBlockPos());
+		boolean sky = player.getEntityWorld().isSkyVisible(player.getBlockPos());
 		boolean gpsOk = y >= 55 || sky;
 		d.putInt("gpsOk", gpsOk ? 1 : 0);
-		d.putInt("seaY", player.getWorld().getSeaLevel());
+		d.putInt("seaY", player.getEntityWorld().getSeaLevel());
 
 		NbtList villages = new NbtList();
 		for (NbtCompound v : VillageManager.villagesForGps(player)) villages.add(v);

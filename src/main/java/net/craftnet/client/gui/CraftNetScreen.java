@@ -3,8 +3,11 @@ package net.craftnet.client.gui;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 
@@ -42,7 +45,9 @@ public abstract class CraftNetScreen extends Screen {
 	}
 
 	@Override
-	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+	public boolean mouseClicked(Click click, boolean focused) {
+		double mouseX = click.x();
+		double mouseY = click.y();
 		for (UiKit.TextInput in : inputs) {
 			if (in.mouseDown(mouseX, mouseY)) return true;
 		}
@@ -53,23 +58,26 @@ public abstract class CraftNetScreen extends Screen {
 				return true;
 			}
 		}
-		return super.mouseClicked(mouseX, mouseY, button);
+		return super.mouseClicked(click, focused);
 	}
 
 	@Override
-	public boolean charTyped(char chr, int modifiers) {
-		for (UiKit.TextInput in : inputs) {
-			if (in.focused && in.type(chr)) return true;
+	public boolean charTyped(CharInput input) {
+		if (input.isValidChar()) {
+			char chr = (char) input.codepoint();
+			for (UiKit.TextInput in : inputs) {
+				if (in.focused && in.type(chr)) return true;
+			}
 		}
-		return super.charTyped(chr, modifiers);
+		return super.charTyped(input);
 	}
 
 	@Override
-	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+	public boolean keyPressed(KeyInput input) {
 		for (UiKit.TextInput in : inputs) {
-			if (in.focused && in.key(keyCode)) return true;
+			if (in.focused && in.key(input.key())) return true;
 		}
-		return super.keyPressed(keyCode, scanCode, modifiers);
+		return super.keyPressed(input);
 	}
 
 	/**

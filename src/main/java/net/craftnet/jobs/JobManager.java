@@ -92,7 +92,7 @@ public final class JobManager {
 	 * (то же зерно, что и в показанном игроку), подделать параметры нельзя.
 	 */
 	public static boolean accept(ServerPlayerEntity player, String type) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null || hasJob(server, player.getUuid())) return false;
 		NbtCompound offer = buildOffer(player, type);
 		if (offer == null) return false;
@@ -128,7 +128,7 @@ public final class JobManager {
 
 	/** Построить оффер для экрана (null, если доступного нет). */
 	public static NbtCompound buildOffer(ServerPlayerEntity player, String type) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return null;
 		java.util.Random rng = new java.util.Random(player.getUuid().hashCode() ^ (server.getOverworld().getTime() / 12000));
 
@@ -190,7 +190,7 @@ public final class JobManager {
 
 	/** Случайный житель текущей деревни (не наш NPC-персонал). Выбор детерминирован зерном оффера. */
 	private static NbtCompound pickTarget(ServerPlayerEntity player, java.util.Random rng) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return null;
 		var near = VillageManager.nearest(server, player.getBlockPos(), false);
 		BlockPos center;
@@ -202,7 +202,7 @@ public final class JobManager {
 			center = player.getBlockPos();
 		}
 		Box box = Box.of(net.minecraft.util.math.Vec3d.ofCenter(center), 96, 48, 96);
-		List<VillagerEntity> found = player.getWorld().getEntitiesByClass(VillagerEntity.class, box,
+		List<VillagerEntity> found = player.getEntityWorld().getEntitiesByClass(VillagerEntity.class, box,
 				v -> v.isAlive()
 						&& !v.getCommandTags().contains("craftnet:pvz")
 						&& !v.getCommandTags().contains("craftnet:bank")
@@ -236,7 +236,7 @@ public final class JobManager {
 
 	/** ПКМ по жителю с активным заданием — доставка. */
 	public static boolean tryDeliver(ServerPlayerEntity player, Entity entity) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return false;
 		JobsState st = state(server);
 		NbtCompound rec = rec(st, player.getUuid());
@@ -263,7 +263,7 @@ public final class JobManager {
 
 	/** Кнопка «сдать заказ» на экране завода/кафе. */
 	public static boolean completeStation(ServerPlayerEntity player, String type) {
-		MinecraftServer server = player.getServer();
+		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return false;
 		JobsState st = state(server);
 		NbtCompound rec = rec(st, player.getUuid());
