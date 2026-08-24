@@ -2,6 +2,7 @@ package net.craftnet.client.gui;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -237,7 +238,8 @@ public class PhoneScreen extends CraftNetScreen {
 	}
 
 	@Override
-	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+	public boolean keyPressed(KeyInput input) {
+		int keyCode = input.key();
 		if (tab == Tab.SHOP && searchInput != null && searchInput.focused
 				&& (keyCode == 257 || keyCode == 335)) { // enter — поиск
 			query = searchInput.value;
@@ -245,7 +247,7 @@ public class PhoneScreen extends CraftNetScreen {
 			sendQuery(query, 0);
 			return true;
 		}
-		return super.keyPressed(keyCode, scanCode, modifiers);
+		return super.keyPressed(input);
 	}
 
 	private static String trim(String s, int max) {
