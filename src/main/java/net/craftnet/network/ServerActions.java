@@ -415,6 +415,7 @@ public final class ServerActions {
 		NbtList stocks = new NbtList();
 		for (NbtCompound row : StocksManager.clientRows(server, player.getUuid())) stocks.add(row);
 		d.put("stocks", stocks);
+		d.put("stNews", StocksManager.clientNews(server, 3));
 
 		StringBuilder tx = new StringBuilder();
 		for (String s : MoneyManager.txLog(server, player.getUuid())) {

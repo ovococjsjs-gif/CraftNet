@@ -261,8 +261,18 @@ public class PhoneScreen extends CraftNetScreen {
 			lockOverlay(ctx, x, y, "Нужен 3G+ для биржи");
 			return;
 		}
-		var stocks = rows(data, "stocks");
+		var news = rows(data, "stNews");
 		int ry = y + 2;
+		if (!news.isEmpty()) {
+			NbtCompound n0 = news.get(0);
+			int dir = i(n0, "dir");
+			String pc = (dir >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.0f", dbl(n0, "pct")) + "%";
+			UiKit.label(ctx, textRenderer, x + 8, ry,
+					"Новости: " + trim(str(n0, "txt") + " (" + pc + ")", 42),
+					dir >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
+			ry += 12;
+		}
+		var stocks = rows(data, "stocks");
 		for (NbtCompound s : stocks) {
 			UiKit.panel(ctx, x + 8, ry, PW - 16, 34, UiKit.COL_PANEL);
 			String id = str(s, "id");
@@ -273,7 +283,9 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 14, ry + 14,
 					String.format(java.util.Locale.ROOT, "%.2f", price) + " CR", UiKit.COL_YELLOW);
 			UiKit.label(ctx, textRenderer, x + 90, ry + 14, ds, delta >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
-			UiKit.label(ctx, textRenderer, x + 14, ry + 24, "у вас: " + i(s, "owned"), UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 14, ry + 24,
+					"у вас: " + i(s, "owned") + " · див " + String.format(java.util.Locale.ROOT, "%.1f", dbl(s, "div")) + "%/д",
+					UiKit.COL_TEXT_DIM);
 			drawSparkline(ctx, x + 130, ry + 5, 70, 22, s.getIntArray("hist").orElse(new int[0]));
 			// кнопки
 			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 28, 12, "+1", mx, my, true);
