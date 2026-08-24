@@ -10,23 +10,19 @@ Fabric-мод для **Minecraft 1.21.11**.
 
 ## Сборка
 
-Требуется **JDK 21** и интернет (Gradle скачает Minecraft, yarn, Fabric API).
+Стек совпадает с официальным шаблоном Fabric для 1.21.11:
+**Loom(remap) 1.17.19 + Gradle 9.5.1 + JDK 25** (целевой байткод — Java 21).
 
-В репозитории намеренно нет `gradle-wrapper.jar` (см. `.gitignore`), поэтому
-с первого раза есть два пути:
+В репозитории намеренно нет `gradle-wrapper.jar` (см. `.gitignore`),
+поэтому собирает либо системный Gradle (9.5+), либо IDE:
 
 ```bash
-# Вариант A: есть системный Gradle — сгенерируйте wrapper и соберитесь
-gradle wrapper --gradle-version 8.14.3
-./gradlew build
-
-# Вариант B: собрать системным Gradle напрямую
 gradle build
 
 # Либо просто откройте проект в IntelliJ IDEA — она подтянет всё сама.
 ```
 
-Готовый мод появится в `build/libs/craftnet-0.1.0.jar`.
+Готовый мод появится в `build/libs/craftnet-1.0.0.jar`.
 
 ## Сборка в GitHub Actions (CI)
 
@@ -36,21 +32,22 @@ gradle build
 *Add file → Create new file → `.github/workflows/build.yml` → вставить содержимое шаблона → Commit*).
 
 После этого:
-- каждый push собирает мод на Temurin 21 + Gradle 8.14.3;
+- каждый push собирает мод на Temurin 25 + Gradle 9.5.1;
 - готовый jar скачивается во вкладке **Actions → (прогон) → Artifacts → craftnet-jar**;
-- логи сборки видны там же и читаются через `gh run view --log`.
+- выжимка лога сборки автоматически публикуется комментарием к коммиту
+  (это удобно, когда полные логи рана скачать нельзя).
 
 Запуск игры из репозитория (отладочный клиент):
 
 ```bash
-./gradlew runClient
+gradle runClient
 ```
 
 ## Установка в игру
 
 1. Fabric Loader **0.19.3+** для Minecraft **1.21.11**.
 2. **Fabric API 0.141.6+1.21.11** (или новее) в папку `mods`.
-3. `craftnet-0.1.0.jar` туда же.
+3. `craftnet-1.0.0.jar` туда же.
 
 ---
 
