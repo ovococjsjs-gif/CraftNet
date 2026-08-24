@@ -11,14 +11,12 @@
   "block.craftnet.cafe_counter": "Стойка кафе",
   "block.craftnet.tower_core": "Ядро вышки связи",
   "block.craftnet.cargo_crate": "Грузовой ящик",
-
   "craftnet.welcome_phone": "Вам выдан смартфон CraftNet (+100 CR на счёт). Клавиша P открывает телефон.",
   "craftnet.phone.title": "CraftNet",
   "craftnet.pvz.title": "Пункт выдачи",
   "craftnet.bank.title": "Банк",
   "craftnet.job.cafe_title": "Кафе",
   "craftnet.job.factory_title": "Завод",
-
   "craftnet.need_signal": "Нет связи. Приблизьтесь к деревне с рабочей вышкой.",
   "craftnet.shop.unavailable": "Этот товар недоступен.",
   "craftnet.shop.no_village": "Рядом нет деревни онлайн для доставки.",
@@ -49,5 +47,8 @@
   "craftnet.payout.arrived": "Поступила выплата: +%s CR (%s).",
   "craftnet.cmd.signal.none": "Связи нет. Ищите деревню с целой вышкой.",
   "craftnet.cmd.signal.offline": "Деревня %s офлайн: вышка повреждена.",
-  "craftnet.cmd.signal.level": "Связь %s · вышка «%s» · %s м"
+  "craftnet.cmd.signal.level": "Связь %s · вышка «%s» · %s м",
+  "craftnet.job.part_ok": "Собрано: %s/%s",
+  "craftnet.job.scrap": "Брак! Схема обновлена (3 ошибки)",
+  "craftnet.job.deliver_phase": "Готово! Разнеси еду %s жителям — они подсвечены"
 }

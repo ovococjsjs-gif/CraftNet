@@ -351,12 +351,7 @@ public final class ServerActions {
 					player.sendMessage(Text.translatable("craftnet.job.no_offer"), false);
 				}
 			}
-			case "complete" -> {
-				String real = args.getString("type", type);
-				if (JobManager.T_FACTORY.equals(real) || JobManager.T_COOK.equals(real)) {
-					JobManager.completeStation(player, real);
-				}
-			}
+			case "assem_click" -> JobManager.assemClick(player, type, args.getString("id", ""));
 			case "cancel" -> JobManager.cancel(server, player.getUuid(), false);
 			default -> {
 			}
@@ -542,29 +537,12 @@ public final class ServerActions {
 		}
 		if ("factory".equals(group)) {
 			NbtCompound o = JobManager.buildOffer(player, JobManager.T_FACTORY);
-			if (o != null) d.put("offerFactory", enrichItems(o, server));
+			if (o != null) d.put("offerFactory", o);
 		} else {
 			NbtCompound oc = JobManager.buildOffer(player, JobManager.T_COOK);
-			if (oc != null) d.put("offerCook", enrichItems(oc, server));
+			if (oc != null) d.put("offerCook", oc);
 			NbtCompound od = JobManager.buildOffer(player, JobManager.T_COURIER);
 			if (od != null) d.put("offerCourier", od);
 		}
-	}
-
-	/** Добавить человекочитаемые имена к списку items оффера. */
-	private static NbtCompound enrichItems(NbtCompound offer, MinecraftServer server) {
-		NbtCompound items = offer.getCompound("items").orElseGet(NbtCompound::new);
-		NbtList readable = new NbtList();
-		for (String id : items.getKeys()) {
-			Item it = Registries.ITEM.get(Identifier.tryParse(id));
-			if (it == null) continue;
-			NbtCompound c = new NbtCompound();
-			c.putString("id", id);
-			c.putString("name", new ItemStack(it).getName().getString());
-			c.putInt("count", items.getInt(id, 0));
-			readable.add(c);
-		}
-		offer.put("readable", readable);
-		return offer;
 	}
 }

@@ -11,14 +11,12 @@
   "block.craftnet.cafe_counter": "Cafe Counter",
   "block.craftnet.tower_core": "Cell Tower Core",
   "block.craftnet.cargo_crate": "Cargo Crate",
-
   "craftnet.welcome_phone": "You've been issued a CraftNet smartphone (+100 CR). Press P to open the phone.",
   "craftnet.phone.title": "CraftNet",
   "craftnet.pvz.title": "Pickup Point",
   "craftnet.bank.title": "Bank",
   "craftnet.job.cafe_title": "Cafe",
   "craftnet.job.factory_title": "Factory",
-
   "craftnet.need_signal": "No signal. Get closer to a village with a working tower.",
   "craftnet.shop.unavailable": "This item is unavailable.",
   "craftnet.shop.no_village": "No online village nearby for delivery.",
@@ -49,5 +47,8 @@
   "craftnet.payout.arrived": "Payout received: +%s CR (%s).",
   "craftnet.cmd.signal.none": "No signal. Look for a village with an intact tower.",
   "craftnet.cmd.signal.offline": "Village %s is offline: tower damaged.",
-  "craftnet.cmd.signal.level": "%s signal · tower «%s» · %s m"
+  "craftnet.cmd.signal.level": "%s signal · tower «%s» · %s m",
+  "craftnet.job.part_ok": "Assembled: %s/%s",
+  "craftnet.job.scrap": "Scrap! New schematic (3 errors)",
+  "craftnet.job.deliver_phase": "Done! Deliver food to %s glowing villagers"
 }

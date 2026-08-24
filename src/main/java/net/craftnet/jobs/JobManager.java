@@ -10,6 +10,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -20,14 +21,19 @@ import net.minecraft.util.math.Box;
 
 import net.craftnet.block.ModBlocks;
 import net.craftnet.econ.MoneyManager;
-import net.craftnet.econ.PriceManager;
+import net.craftnet.item.ModItems;
 import net.craftnet.state.JobsState;
 import net.craftnet.util.Nbt2;
 import net.craftnet.village.VillageManager;
 
 /**
- * Рабочие места. Лестница оплаты: завод ×1.6 > грузчик ×1.35 > повар ×1.15 > курьер ×1.0.
- * Одновременно — одно задание. Срок — 10 минут с момента принятия.
+ * Рабочие места. Лестница оплаты: завод > грузчик > повар > курьер.
+ * Одновременно — одно задание, срок ограничен.
+ *
+ * Завод и повар — мини-игра «сборка по схеме»: сервер задаёт последовательность
+ * компонентов, игрок повторяет её кликами на палитре. Третья ошибка = брак
+ * (схема перегенерируется, собранные детали/порции не сгорают). Повар после
+ * сборки всех порций разносит готовую еду жителям (как курьер, но на 2-3 цели).
  */
 public final class JobManager {
 	private JobManager() {}
@@ -37,20 +43,22 @@ public final class JobManager {
 	public static final String T_COOK = "cook";
 	public static final String T_COURIER = "courier";
 
-	private static final long JOB_TTL_TICKS = 12000; // 10 минут
+	private static final long TTL_SHORT = 12000; // 10 мин
+	private static final long TTL_LONG = 18000;  // 15 мин (повару ещё бегать)
 
-	private static final Item[][] FACTORY_POOL = {
-			{Items.REDSTONE, Items.REPEATER, Items.COMPARATOR},
-			{Items.REDSTONE_TORCH, Items.PISTON, Items.STICKY_PISTON},
-			{Items.OBSERVER, Items.DISPENSER, Items.DROPPER},
-			{Items.HOPPER, Items.TARGET, Items.REDSTONE_LAMP},
-	};
+	/** Палитра компонентов завода (редстоун-детали). */
+	private static final String[] FACTORY_CATS = {
+			"minecraft:redstone", "minecraft:repeater", "minecraft:comparator",
+			"minecraft:piston", "minecraft:observer", "minecraft:redstone_torch"};
 
-	private static final Item[][] COOK_POOL = {
-			{Items.BREAD, Items.COOKED_BEEF, Items.COOKED_PORKCHOP},
-			{Items.COOKED_CHICKEN, Items.BAKED_POTATO, Items.PUMPKIN_PIE},
-			{Items.MUSHROOM_STEW, Items.RABBIT_STEW, Items.COOKED_SALMON},
-	};
+	/** Палитра ингредиентов кафе. */
+	private static final String[] COOK_CATS = {
+			"minecraft:bread", "minecraft:cooked_beef", "minecraft:baked_potato",
+			"minecraft:cooked_chicken", "minecraft:pumpkin_pie", "minecraft:mushroom_stew"};
+
+	public static String[] catsFor(String type) {
+		return T_COOK.equals(type) ? COOK_CATS : FACTORY_CATS;
+	}
 
 	public static JobsState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(JobsState.TYPE);
@@ -73,55 +81,17 @@ public final class JobManager {
 	}
 
 	public static NbtCompound jobView(MinecraftServer server, UUID player) {
-		// rec() уже возвращает отсоединённую копию (поведение NBT 1.21.5+)
 		return rec(state(server), player);
 	}
 
-	/** Отмена текущего задания. */
+	/** Отмена текущего задания (с погашением подсветок). */
 	public static void cancel(MinecraftServer server, UUID player, boolean silent) {
-		unglow(server, state(server), player);
+		unglowAll(server, player);
 		saveRec(state(server), player, new NbtCompound());
 		if (!silent) {
 			ServerPlayerEntity p = server.getPlayerManager().getPlayer(player);
 			if (p != null) p.sendMessage(Text.translatable("craftnet.job.cancelled"), false);
 		}
-	}
-
-	/**
-	 * Принять задание. Оффер детерминированно пересоздаётся сервером
-	 * (то же зерно, что и в показанном игроку), подделать параметры нельзя.
-	 */
-	public static boolean accept(ServerPlayerEntity player, String type) {
-		MinecraftServer server = player.getEntityWorld().getServer();
-		if (server == null || hasJob(server, player.getUuid())) return false;
-		NbtCompound offer = buildOffer(player, type);
-		if (offer == null) return false;
-		JobsState st = state(server);
-		NbtCompound rec = new NbtCompound();
-		rec.putString("type", type);
-		rec.put("data", offer);
-		rec.putLong("since", server.getOverworld().getTime());
-
-		if (T_LOADER.equals(type)) {
-			player.getInventory().offerOrDrop(new ItemStack(ModBlocks.CARGO_CRATE.asItem(), 1));
-			rec.putInt("carryNeed", 1);
-		} else if (T_COURIER.equals(type)) {
-			int portions = offer.getInt("portions", 4);
-			player.getInventory().offerOrDrop(new ItemStack(net.craftnet.item.ModItems.FOOD_BOX, portions));
-			rec.putInt("carryNeed", portions);
-		}
-		// подсветить целевого жителя
-		String uuid = Nbt2.sub(offer, "target").getString("uuid", "");
-		if (!uuid.isEmpty()) {
-			try {
-				Entity e = server.getOverworld().getEntityAnyDimension(UUID.fromString(uuid));
-				if (e != null) e.setGlowing(true);
-			} catch (IllegalArgumentException ignored) {
-			}
-		}
-		saveRec(st, player.getUuid(), rec);
-		player.sendMessage(Text.translatable("craftnet.job.accepted"), false);
-		return true;
 	}
 
 	// -------------------- генерация офферов --------------------
@@ -135,34 +105,18 @@ public final class JobManager {
 		NbtCompound offer = new NbtCompound();
 		switch (type) {
 			case T_FACTORY -> {
-				Item[] picks = FACTORY_POOL[rng.nextInt(FACTORY_POOL.length)];
-				NbtCompound items = new NbtCompound();
-				long sum = 0;
-				for (Item it : picks) {
-					int n = 2 + rng.nextInt(4); // 2..5
-					String id = Registries.ITEM.getId(it).toString();
-					items.putInt(id, n);
-					sum += (long) PriceManager.buyPrice(id) * n;
-				}
-				long pay = Math.max(40, Math.round(sum * 1.6) + rng.nextInt(15));
-				offer.put("items", items);
-				offer.putLong("pay", pay);
-				offer.putString("desc", "Производственный заказ: собрать компоненты");
+				int parts = 3 + rng.nextInt(3); // 3..5 деталей
+				offer.putInt("partsNeed", parts);
+				offer.putLong("pay", 90 + parts * 35L + rng.nextInt(20));
+				offer.putString("desc", "Сборка редстоун-деталей по схеме");
+				offer.putString("cats", String.join(",", FACTORY_CATS));
 			}
 			case T_COOK -> {
-				Item[] picks = COOK_POOL[rng.nextInt(COOK_POOL.length)];
-				NbtCompound items = new NbtCompound();
-				long sum = 0;
-				for (Item it : picks) {
-					int n = 2 + rng.nextInt(3);
-					String id = Registries.ITEM.getId(it).toString();
-					items.putInt(id, n);
-					sum += (long) PriceManager.buyPrice(id) * n;
-				}
-				long pay = Math.max(25, Math.round(sum * 1.15) + 5);
-				offer.put("items", items);
-				offer.putLong("pay", pay);
-				offer.putString("desc", "Заказ кафе: приготовить блюда");
+				int parts = 3 + rng.nextInt(3); // 3..5 порций
+				offer.putInt("partsNeed", parts);
+				offer.putLong("pay", 60 + parts * 22L + rng.nextInt(10));
+				offer.putString("desc", "Приготовить порции по рецепту и разнести");
+				offer.putString("cats", String.join(",", COOK_CATS));
 			}
 			case T_LOADER, T_COURIER -> {
 				NbtCompound target = pickTarget(player, rng);
@@ -175,7 +129,7 @@ public final class JobManager {
 				} else {
 					int portions = 3 + rng.nextInt(6); // 3..8
 					offer.putInt("portions", portions);
-					offer.putLong("pay", portions * 4L);
+					offer.putLong("pay", 10 + portions * 5L);
 					offer.putString("desc", "Доставить пакет еды жителю");
 				}
 				offer.put("target", target);
@@ -188,8 +142,251 @@ public final class JobManager {
 		return offer;
 	}
 
-	/** Случайный житель текущей деревни (не наш NPC-персонал). Выбор детерминирован зерном оффера. */
+	/**
+	 * Принять задание. Оффер пересоздаётся на сервере тем же зерном —
+	 * клиент не может подделать параметры.
+	 */
+	public static boolean accept(ServerPlayerEntity player, String type) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		if (server == null || hasJob(server, player.getUuid())) return false;
+		NbtCompound offer = buildOffer(player, type);
+		if (offer == null) return false;
+		JobsState st = state(server);
+		NbtCompound rec = new NbtCompound();
+		rec.putString("type", type);
+		rec.put("data", offer);
+		rec.putLong("since", server.getOverworld().getTime());
+
+		if (T_FACTORY.equals(type) || T_COOK.equals(type)) {
+			NbtCompound data = Nbt2.sub(rec, "data");
+			data.putInt("parts", 0);
+			data.putInt("errors", 0);
+			data.putString("stage", "build");
+			data.putString("seqNeed", newSeq(type, server, player.getUuid(), 0));
+			data.putString("seqHave", "");
+			rec.put("data", data);
+		}
+
+		if (T_LOADER.equals(type)) {
+			player.getInventory().offerOrDrop(new ItemStack(ModBlocks.CARGO_CRATE.asItem(), 1));
+			rec.putInt("carryNeed", 1);
+		} else if (T_COURIER.equals(type)) {
+			int portions = offer.getInt("portions", 4);
+			player.getInventory().offerOrDrop(new ItemStack(ModItems.FOOD_BOX, portions));
+			rec.putInt("carryNeed", portions);
+		}
+
+		// подсветка целей (одиночный target у грузчика/курьера)
+		NbtCompound target = Nbt2.sub(offer, "target");
+		String uuid = target.getString("uuid", "");
+		if (!uuid.isEmpty()) glow(server, uuid, true);
+
+		saveRec(st, player.getUuid(), rec);
+		player.sendMessage(Text.translatable("craftnet.job.accepted"), false);
+		return true;
+	}
+
+	// -------------------- мини-игра «сборка» --------------------
+
+	/** Новая схема: длина растёт с прогрессом (4..7 шагов), зерно — игрок+тик+parts. */
+	private static String newSeq(String type, MinecraftServer server, UUID player, int parts) {
+		String[] cats = catsFor(type);
+		int len = 4 + Math.min(3, parts);
+		java.util.Random rng = new java.util.Random(
+				server.getOverworld().getTime() ^ (player.hashCode() * 31L) ^ parts * 997L);
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < len; i++) {
+			if (i > 0) sb.append(',');
+			sb.append(cats[rng.nextInt(cats.length)]);
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * Клик по компоненту палитры. Только для factory/cook на стадии build,
+	 * экран должен соответствовать типу задания (завод ↔ factory, кафе ↔ cook).
+	 */
+	public static boolean assemClick(ServerPlayerEntity player, String group, String itemId) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		if (server == null) return false;
+		String expectedType = "factory".equals(group) ? T_FACTORY : T_COOK;
+		JobsState st = state(server);
+		NbtCompound rec = rec(st, player.getUuid());
+		if (rec.isEmpty() || !expectedType.equals(Nbt2.str(rec, "type"))) return false;
+		NbtCompound data = Nbt2.sub(rec, "data");
+		if (!"build".equals(Nbt2.str(data, "stage"))) return false;
+
+		// кликабельны только компоненты из палитры
+		boolean inPalette = false;
+		for (String c : catsFor(expectedType)) if (c.equals(itemId)) { inPalette = true; break; }
+		if (!inPalette) return false;
+
+		String[] seq = Nbt2.str(data, "seqNeed").split(",");
+		String have = Nbt2.str(data, "seqHave");
+		int progress = have.isEmpty() ? 0 : have.split(",").length;
+		if (progress >= seq.length) return false;
+
+		int parts = data.getInt("parts", 0);
+		int partsNeed = data.getInt("partsNeed", 3);
+
+		if (seq[progress].equals(itemId)) {
+			// верный шаг
+			String newHave = have.isEmpty() ? itemId : have + "," + itemId;
+			data.putString("seqHave", newHave);
+			if (progress + 1 >= seq.length) {
+				parts++;
+				data.putInt("parts", parts);
+				data.putInt("errors", 0);
+				data.putString("seqHave", "");
+				if (parts >= partsNeed) {
+					finishBuildPhase(player, st, rec, data, expectedType);
+					return true;
+				}
+				data.putString("seqNeed", newSeq(expectedType, server, player.getUuid(), parts));
+				player.sendMessage(Text.translatable("craftnet.job.part_ok", parts, partsNeed), true);
+				player.playSound(net.minecraft.sound.SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.4f);
+			}
+		} else {
+			int errors = data.getInt("errors", 0) + 1;
+			data.putInt("errors", errors);
+			player.playSound(net.minecraft.sound.SoundEvents.ENTITY_VILLAGER_NO, 0.7f, 0.9f);
+			if (errors >= 3) {
+				// брак: схема новая, собранные детали НЕ сгорают
+				data.putInt("errors", 0);
+				data.putString("seqHave", "");
+				data.putString("seqNeed", newSeq(expectedType, server, player.getUuid(), parts));
+				player.sendMessage(Text.translatable("craftnet.job.scrap"), true);
+			}
+		}
+		rec.put("data", data);
+		saveRec(st, player.getUuid(), rec);
+		return true;
+	}
+
+	/** Завершает стадию сборки: factory — сразу расчёт; cook — фаза разноса. */
+	private static void finishBuildPhase(ServerPlayerEntity player, JobsState st, NbtCompound rec,
+			NbtCompound data, String type) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		long pay = Nbt2.lng(data, "pay");
+		if (T_FACTORY.equals(type)) {
+			MoneyManager.add(server, player.getUuid(), pay, "работа: завод");
+			player.sendMessage(Text.translatable("craftnet.job.paid", pay, type), false);
+			player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
+			saveRec(st, player.getUuid(), new NbtCompound());
+			return;
+		}
+		// повар: переход к разносу
+		int partsNeed = data.getInt("partsNeed", 3);
+		data.putString("stage", "deliver");
+		player.getInventory().offerOrDrop(new ItemStack(ModItems.FOOD_BOX, partsNeed));
+
+		int serves = Math.min(partsNeed, 3); // 2-3 точки доставки
+		NbtList targets = new NbtList();
+		java.util.Random rng = new java.util.Random(
+				server.getOverworld().getTime() ^ player.getUuid().hashCode());
+		List<UUID> used = new ArrayList<>();
+		for (int i = 0; i < serves; i++) {
+			NbtCompound t = pickTargetExcluding(player, rng, used);
+			if (t == null) break;
+			used.add(UUID.fromString(t.getString("uuid", "")));
+			targets.add(t);
+			glow(server, t.getString("uuid", ""), true);
+		}
+		if (targets.isEmpty()) {
+			// жителей нет — просто расчёт сейчас
+			MoneyManager.add(server, player.getUuid(), pay, "работа: повар");
+			player.sendMessage(Text.translatable("craftnet.job.paid", pay, type), false);
+			saveRec(st, player.getUuid(), new NbtCompound());
+			return;
+		}
+		data.put("targets", targets);
+		// цена одной подачи (последняя добирает остаток)
+		data.putLong("servePay", Math.max(1, pay / targets.size()));
+		rec.put("data", data);
+		saveRec(st, player.getUuid(), rec);
+		player.sendMessage(Text.translatable("craftnet.job.deliver_phase", targets.size()), false);
+		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_VILLAGER_CELEBRATE, 0.7f, 1.1f);
+	}
+
+	// -------------------- доставка жителям --------------------
+
+	/** ПКМ по жителю с активным заданием — доставка. */
+	public static boolean tryDeliver(ServerPlayerEntity player, Entity entity) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		if (server == null) return false;
+		JobsState st = state(server);
+		NbtCompound rec = rec(st, player.getUuid());
+		if (rec.isEmpty()) return false;
+		String type = Nbt2.str(rec, "type");
+		String uuid = entity.getUuidAsString();
+
+		// грузчик/курьер — одиночная цель
+		if (T_LOADER.equals(type) || T_COURIER.equals(type)) {
+			NbtCompound target = Nbt2.sub(Nbt2.sub(rec, "data"), "target");
+			if (!uuid.equals(target.getString("uuid", ""))) return false;
+			Item need = T_LOADER.equals(type) ? ModBlocks.CARGO_CRATE.asItem() : ModItems.FOOD_BOX;
+			int needCount = Nbt2.i(rec, "carryNeed");
+			if (countInInventory(player, need) < needCount) {
+				player.sendMessage(Text.translatable("craftnet.job.no_cargo"), true);
+				return false;
+			}
+			removeFromInventory(player, need, needCount);
+			entity.setGlowing(false);
+			long pay = Nbt2.lng(Nbt2.sub(rec, "data"), "pay");
+			MoneyManager.add(server, player.getUuid(), pay, "работа: " + type);
+			player.sendMessage(Text.translatable("craftnet.job.paid", pay, type), false);
+			player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
+			saveRec(st, player.getUuid(), new NbtCompound());
+			return true;
+		}
+
+		// повар — фаза разноса по списку целей
+		if (T_COOK.equals(type)) {
+			NbtCompound data = Nbt2.sub(rec, "data");
+			if (!"deliver".equals(Nbt2.str(data, "stage"))) return false;
+			NbtList targets = data.getListOrEmpty("targets");
+			int hit = -1;
+			for (int i = 0; i < targets.size(); i++) {
+				if (targets.get(i) instanceof NbtCompound c
+						&& uuid.equals(c.getString("uuid", ""))) { hit = i; break; }
+			}
+			if (hit < 0) return false;
+			if (countInInventory(player, ModItems.FOOD_BOX) < 1) {
+				player.sendMessage(Text.translatable("craftnet.job.no_cargo"), true);
+				return false;
+			}
+			removeFromInventory(player, ModItems.FOOD_BOX, 1);
+			entity.setGlowing(false);
+			long servePay = Nbt2.lng(data, "servePay");
+			targets.remove(hit);
+			long payTotal = Nbt2.lng(data, "pay");
+			int servedBefore = data.getInt("served", 0);
+			// последняя подача добирает остаток от общей суммы заказа
+			long thisPay = targets.isEmpty() ? payTotal - servePay * servedBefore : servePay;
+			data.putInt("served", servedBefore + 1);
+			MoneyManager.add(server, player.getUuid(), thisPay, "работа: повар(подача)");
+			player.sendMessage(Text.translatable("craftnet.job.paid", thisPay, type), false);
+			player.playSound(net.minecraft.sound.SoundEvents.ENTITY_VILLAGER_YES, 0.7f, 1.0f);
+			if (targets.isEmpty()) {
+				saveRec(st, player.getUuid(), new NbtCompound());
+				return true;
+			}
+			data.put("targets", targets);
+			rec.put("data", data);
+			saveRec(st, player.getUuid(), rec);
+			return true;
+		}
+		return false;
+	}
+
+	// -------------------- состояние/тики --------------------
+
+	/** Случайный житель текущей деревни (не наш NPC-персонал). Выбор детерминирован зерном. */
 	private static NbtCompound pickTarget(ServerPlayerEntity player, java.util.Random rng) {
+		return pickTargetExcluding(player, rng, List.of());
+	}
+
+	private static NbtCompound pickTargetExcluding(ServerPlayerEntity player, java.util.Random rng, List<UUID> exclude) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return null;
 		var near = VillageManager.nearest(server, player.getBlockPos(), false);
@@ -207,10 +404,10 @@ public final class JobManager {
 						&& !v.getCommandTags().contains("craftnet:pvz")
 						&& !v.getCommandTags().contains("craftnet:bank")
 						&& !v.getCommandTags().contains("craftnet:foreman")
-						&& !v.getCommandTags().contains("craftnet:barista"));
+						&& !v.getCommandTags().contains("craftnet:barista")
+						&& !exclude.contains(v.getUuid()));
 		if (found.isEmpty()) return null;
 		VillagerEntity pick = found.get(rng.nextInt(found.size()));
-		// подсветка включается только при принятии задания (accept), не при показе оффера
 		NbtCompound t = new NbtCompound();
 		t.putString("uuid", pick.getUuidAsString());
 		t.putString("name", pick.hasCustomName() && pick.getCustomName() != null
@@ -222,71 +419,25 @@ public final class JobManager {
 		return t;
 	}
 
-	private static void unglow(MinecraftServer server, JobsState st, UUID playerId) {
-		NbtCompound rec0 = rec(st, playerId);
-		NbtCompound target = Nbt2.sub(Nbt2.sub(rec0, "data"), "target");
-		String uuid = target.getString("uuid", "");
-		if (uuid.isEmpty()) return;
+	private static void glow(MinecraftServer server, String uuid, boolean on) {
 		try {
 			Entity e = server.getOverworld().getEntityAnyDimension(UUID.fromString(uuid));
-			if (e != null) e.setGlowing(false);
+			if (e != null) e.setGlowing(on);
 		} catch (IllegalArgumentException ignored) {
 		}
 	}
 
-	/** ПКМ по жителю с активным заданием — доставка. */
-	public static boolean tryDeliver(ServerPlayerEntity player, Entity entity) {
-		MinecraftServer server = player.getEntityWorld().getServer();
-		if (server == null) return false;
-		JobsState st = state(server);
-		NbtCompound rec = rec(st, player.getUuid());
-		if (rec.isEmpty()) return false;
-		String type = Nbt2.str(rec, "type");
-		if (!T_LOADER.equals(type) && !T_COURIER.equals(type)) return false;
-		NbtCompound target = Nbt2.sub(Nbt2.sub(rec, "data"), "target");
-		if (!entity.getUuidAsString().equals(target.getString("uuid", ""))) return false;
-
-		Item need = T_LOADER.equals(type) ? ModBlocks.CARGO_CRATE.asItem() : net.craftnet.item.ModItems.FOOD_BOX;
-		int needCount = Nbt2.i(rec, "carryNeed");
-		if (countInInventory(player, need) < needCount) {
-			player.sendMessage(Text.translatable("craftnet.job.no_cargo"), true);
-			return false;
+	private static void unglowAll(MinecraftServer server, UUID playerId) {
+		NbtCompound rec0 = rec(state(server), playerId);
+		NbtCompound data = Nbt2.sub(rec0, "data");
+		glow(server, Nbt2.sub(data, "target").getString("uuid", ""), false);
+		for (var el : data.getListOrEmpty("targets")) {
+			if (el instanceof NbtCompound c) glow(server, c.getString("uuid", ""), false);
 		}
-		removeFromInventory(player, need, needCount);
-		entity.setGlowing(false);
-		long pay = Nbt2.lng(Nbt2.sub(rec, "data"), "pay");
-		MoneyManager.add(server, player.getUuid(), pay, "работа: " + type);
-		player.sendMessage(Text.translatable("craftnet.job.paid", pay, type), false);
-		saveRec(st, player.getUuid(), new NbtCompound());
-		return true;
 	}
 
-	/** Кнопка «сдать заказ» на экране завода/кафе. */
-	public static boolean completeStation(ServerPlayerEntity player, String type) {
-		MinecraftServer server = player.getEntityWorld().getServer();
-		if (server == null) return false;
-		JobsState st = state(server);
-		NbtCompound rec = rec(st, player.getUuid());
-		if (rec.isEmpty() || !type.equals(Nbt2.str(rec, "type"))) return false;
-		NbtCompound data = Nbt2.sub(rec, "data");
-		NbtCompound items = Nbt2.sub(data, "items");
-		for (String id : items.getKeys()) {
-			Item it = Registries.ITEM.get(Identifier.tryParse(id));
-			int n = items.getInt(id, 0);
-			if (it == null || countInInventory(player, it) < n) {
-				player.sendMessage(Text.translatable("craftnet.job.missing_items"), true);
-				return false;
-			}
-		}
-		for (String id : items.getKeys()) {
-			Item it = Registries.ITEM.get(Identifier.tryParse(id));
-			if (it != null) removeFromInventory(player, it, items.getInt(id, 0));
-		}
-		long pay = Nbt2.lng(data, "pay");
-		MoneyManager.add(server, player.getUuid(), pay, "работа: " + type);
-		player.sendMessage(Text.translatable("craftnet.job.paid", pay, type), false);
-		saveRec(st, player.getUuid(), new NbtCompound());
-		return true;
+	private static long ttlOf(String type) {
+		return T_COOK.equals(type) ? TTL_LONG : TTL_SHORT;
 	}
 
 	/** Истечение сроков + эффект тяжести у грузчиков. */
@@ -299,7 +450,8 @@ public final class JobManager {
 		List<String> expired = new ArrayList<>();
 		for (String k : players.getKeys()) {
 			NbtCompound rec = players.getCompound(k).orElseGet(NbtCompound::new);
-			if (now - rec.getLong("since", 0L) > JOB_TTL_TICKS) expired.add(k);
+			String type = Nbt2.str(rec, "type");
+			if (now - rec.getLong("since", 0L) > ttlOf(type)) expired.add(k);
 		}
 		for (String k : expired) {
 			try {
