@@ -43,6 +43,12 @@ gradle build
 gradle runClient
 ```
 
+## Готовая сборка из CI
+
+GitHub Actions собирает мод на каждый push: вкладка **Actions** →
+зелёный прогон → внизу **Artifacts → craftnet-jar** → скачанный zip
+содержит `craftnet-1.0.0.jar`.
+
 ## Установка в игру
 
 1. Fabric Loader **0.19.3+** для Minecraft **1.21.11**.
