@@ -27,37 +27,15 @@ jobs:
           gradle-version: "9.5.1"
 
       - name: Build CraftNet
-        run: gradle build --no-daemon --stacktrace 2>&1 | tee build-output.log
+        run: bash ci/ci-build.sh
 
       - name: Report build log
         if: always()
         shell: bash
-        run: |
-          {
-            echo "### CraftNet CI: **${{ job.status }}**"
-            echo
-            echo "\`${GITHUB_SHA}\`"
-            echo
-            echo '```'
-            echo "== LOG HEAD =="
-            head -n 25 build-output.log || true
-            echo
-            echo "== KEY LINES =="
-            grep -n -B3 -A8 -E "FAILURE:|What went wrong|Caused by:|Could not|error:|> Task .*FAILED|Compilation failed|Execution failed|requires|incompatible" build-output.log | head -n 160 || true
-            echo
-            echo "== LOG TAIL =="
-            tail -n 20 build-output.log || true
-            echo '```'
-          } > report.md
-          python3 - <<'PYEOF'
-          data = open('report.md', encoding='utf-8').read()
-          if len(data) > 60000:
-              data = data[:60000] + "\n```\n(truncated)\n"
-          open('report.md', 'w', encoding='utf-8').write(data)
-          PYEOF
-          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -F body=@report.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_JOB_STATUS: ${{ job.status }}
+        run: bash ci/ci-report.sh
 
       - name: Upload jar
         if: success()
@@ -65,6 +43,7 @@ jobs:
         with:
           name: craftnet-jar
           path: build/libs/*.jar
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
