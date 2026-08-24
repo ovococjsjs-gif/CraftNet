@@ -66,7 +66,7 @@ public class PhoneScreen extends CraftNetScreen {
 		inputs.clear();
 		searchInput = null;
 		if (tab == Tab.SHOP) {
-			searchInput = new UiKit.TextInput(px() + 8, py() + 37, PW - 100, "поиск предмета…", false);
+			searchInput = new UiKit.TextInput(px() + 8, py() + 43, 150, "поиск предмета…", false);
 			searchInput.value = query;
 			inputs.add(searchInput);
 		} else if (tab == Tab.CASINO) {
@@ -77,9 +77,9 @@ public class PhoneScreen extends CraftNetScreen {
 				inputs.add(casinoSearchInput);
 			}
 		} else if (tab == Tab.BANK) {
-			payeeInput = new UiKit.TextInput(px() + 16, py() + 94, 96, "имя игрока", false);
+			payeeInput = new UiKit.TextInput(px() + 16, py() + 90, 120, "имя игрока", false);
 			payeeInput.maxLen = 16;
-			amountInput = new UiKit.TextInput(px() + 118, py() + 94, 52, "сумма", true);
+			amountInput = new UiKit.TextInput(px() + 142, py() + 90, 60, "сумма", true);
 			amountInput.maxLen = 9;
 			if (payeeInputPrev != null) payeeInput.value = payeeInputPrev;
 			inputs.add(payeeInput);
@@ -130,15 +130,16 @@ public class PhoneScreen extends CraftNetScreen {
 		renderStatusBar(ctx, x, y, mx, my);
 
 		// панель вкладок — иконки приложений
-		int ty = y + 16;
+		int ty = y + 15;
+		int tStep = 40;
 		drawTabIcon(ctx, x + 8, ty, Items.COMPASS, Tab.HOME, mx, my);
-		drawTabIcon(ctx, x + 44, ty, Items.EMERALD, Tab.SHOP, mx, my);
-		drawTabIcon(ctx, x + 80, ty, Items.CHEST, Tab.MARKET, mx, my);
-		drawTabIcon(ctx, x + 116, ty, Items.TARGET, Tab.CASINO, mx, my);
-		drawTabIcon(ctx, x + 152, ty, Items.PAPER, Tab.STOCKS, mx, my);
-		drawTabIcon(ctx, x + 188, ty, Items.FILLED_MAP, Tab.GPS, mx, my);
-		drawTabIcon(ctx, x + 224, ty, Items.GOLD_INGOT, Tab.BANK, mx, my);
-		ctx.drawHorizontalLine(x, x + PW - 1, y + 36, UiKit.COL_LINE);
+		drawTabIcon(ctx, x + 8 + tStep, ty, Items.EMERALD, Tab.SHOP, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 2, ty, Items.CHEST, Tab.MARKET, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 3, ty, Items.TARGET, Tab.CASINO, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 4, ty, Items.PAPER, Tab.STOCKS, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 5, ty, Items.FILLED_MAP, Tab.GPS, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 6, ty, Items.GOLD_INGOT, Tab.BANK, mx, my);
+		ctx.drawHorizontalLine(x, x + PW - 1, y + 37, UiKit.COL_LINE);
 
 		int cy = y + 40;
 		switch (tab) {
@@ -154,11 +155,11 @@ public class PhoneScreen extends CraftNetScreen {
 
 	private void drawTabIcon(DrawContext ctx, int x, int y, Item icon, Tab t, double mx, double my) {
 		boolean active = tab == t;
-		boolean hover = mx >= x && mx < x + 32 && my >= y && my < y + 18;
-		ctx.fill(x, y, x + 32, y + 18, active ? UiKit.COL_PANEL_HI : hover ? UiKit.COL_PANEL : UiKit.COL_BG);
-		ctx.drawItem(icon.getDefaultStack(), x + 8, y + 1);
-		if (active) ctx.fill(x + 3, y + 17, x + 29, y + 19, UiKit.COL_ACCENT);
-		clickable(x, y, 32, 19, () -> switchTab(t));
+		boolean hover = mx >= x && mx < x + 36 && my >= y && my < y + 20;
+		ctx.fill(x, y, x + 36, y + 20, active ? UiKit.COL_PANEL_HI : hover ? UiKit.COL_PANEL : UiKit.COL_BG);
+		ctx.drawItem(icon.getDefaultStack(), x + 10, y + 2);
+		if (active) ctx.fill(x + 4, y + 19, x + 32, y + 21, UiKit.COL_ACCENT);
+		clickable(x, y, 36, 21, () -> switchTab(t));
 	}
 
 	private void renderStatusBar(DrawContext ctx, int x, int y, double mx, double my) {
@@ -276,46 +277,49 @@ public class PhoneScreen extends CraftNetScreen {
 		NbtCompound shop = sub(data, "shop");
 		var entries = rows(shop, "entries");
 
-		// счётчик количества (правый верхний угол)
-		UiKit.label(ctx, textRenderer, x + PW - 84, y + 6, "×" + buyCount, UiKit.COL_TEXT);
-		UiKit.button(ctx, textRenderer, x + PW - 58, y + 3, 13, 13, "-", mx, my, buyCount > 1);
-		clickable(x + PW - 58, y + 3, 13, 13, () -> buyCount = Math.max(1, buyCount / 2));
-		UiKit.button(ctx, textRenderer, x + PW - 42, y + 3, 13, 13, "+", mx, my, buyCount < 64);
-		clickable(x + PW - 42, y + 3, 13, 13, () -> buyCount = Math.min(64, buyCount * 2));
+		// счётчик количества (верхняя строка, справа от поиска)
+		UiKit.label(ctx, textRenderer, x + PW - 78, y + 7, "×" + buyCount, UiKit.COL_TEXT);
+		UiKit.button(ctx, textRenderer, x + PW - 52, y + 3, 14, 14, "-", mx, my, buyCount > 1);
+		clickable(x + PW - 52, y + 3, 14, 14, () -> buyCount = Math.max(1, buyCount / 2));
+		UiKit.button(ctx, textRenderer, x + PW - 36, y + 3, 14, 14, "+", mx, my, buyCount < 64);
+		clickable(x + PW - 36, y + 3, 14, 14, () -> buyCount = Math.min(64, buyCount * 2));
 
-		// строки каталога: 6 штук по 19px — ровно до пейджера
-		int listY = y + 22;
+		// строки каталога: 6 штук по 22px с двумя строками текста
+		int listY = y + 24;
 		int visible = Math.min(entries.size(), 6);
 		for (int idx = 0; idx < visible; idx++) {
 			NbtCompound e = entries.get(idx);
-			int ry = listY + idx * 19;
-			UiKit.card(ctx, x + 8, ry, PW - 16, 17, UiKit.COL_PANEL);
+			int ry = listY + idx * 22;
+			UiKit.card(ctx, x + 8, ry, PW - 16, 20, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
-			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry);
-			UiKit.label(ctx, textRenderer, x + 32, ry + 1, trim(str(e, "name"), 20), UiKit.COL_TEXT);
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
+			UiKit.label(ctx, textRenderer, x + 34, ry + 2, trim(str(e, "name"), 26), UiKit.COL_TEXT);
 			long total = (long) i(e, "buy") * buyCount;
-			UiKit.label(ctx, textRenderer, x + 32, ry + 9,
+			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
 					i(e, "buy") + " CR/шт · продажа " + i(e, "sell"), UiKit.COL_TEXT_DIM);
-			UiKit.button(ctx, textRenderer, x + PW - 64, ry + 2, 56, 13, total + " CR", mx, my,
+			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
 					lng(data, "balance") >= total);
 			final String fid = str(e, "id");
-			clickable(x + PW - 64, ry + 2, 56, 13, () -> {
+			clickable(x + PW - 68, ry + 3, 60, 14, () -> {
 				NbtCompound a = new NbtCompound();
 				a.putString("id", fid);
 				a.putInt("count", buyCount);
 				send("buy", a);
 			});
 		}
+		if (visible == 0) {
+			UiKit.label(ctx, textRenderer, x + 14, y + 60, "Ничего не найдено — уточни запрос.", UiKit.COL_TEXT_DIM);
+		}
 		// пейджер (центрированный)
 		int page = i(shop, "page");
 		int pages = i(shop, "pages");
-		int py2 = y + 142;
-		UiKit.button(ctx, textRenderer, x + 8, py2, 18, 13, "<", mx, my, page > 0);
-		clickable(x + 8, py2, 18, 13, () -> sendQuery(query, Math.max(0, page - 1)));
-		UiKit.label(ctx, textRenderer, x + 32, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
-		UiKit.button(ctx, textRenderer, x + 88, py2, 18, 13, ">", mx, my, page + 1 < pages);
-		clickable(x + 88, py2, 18, 13, () -> sendQuery(query, page + 1));
-		UiKit.label(ctx, textRenderer, x + PW - 120, py2 + 3, "доставка в ПВЗ", UiKit.COL_TEXT_DIM);
+		int py2 = y + 160;
+		UiKit.button(ctx, textRenderer, x + 8, py2, 18, 14, "<", mx, my, page > 0);
+		clickable(x + 8, py2, 18, 14, () -> sendQuery(query, Math.max(0, page - 1)));
+		UiKit.label(ctx, textRenderer, x + 34, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, x + 92, py2, 18, 14, ">", mx, my, page + 1 < pages);
+		clickable(x + 92, py2, 18, 14, () -> sendQuery(query, page + 1));
+		UiKit.label(ctx, textRenderer, x + PW - 128, py2 + 3, "доставка в ПВЗ", UiKit.COL_TEXT_DIM);
 	}
 
 	// ------------------------------ Казино-апгрейд ------------------------------
@@ -724,26 +728,26 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 10, y + 6,
 				"лотов: " + i(market, "total") + " · комиссия 5% у продавца", UiKit.COL_TEXT_DIM);
 		if (entries.isEmpty()) {
-			UiKit.label(ctx, textRenderer, x + 10, y + 40, "Пока пусто. Продавай своё из ПВЗ —", UiKit.COL_TEXT_DIM);
-			UiKit.label(ctx, textRenderer, x + 10, y + 52, "кнопка ₽ рядом с предметом.", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, y + 48, "Пока пусто. Продавай своё из ПВЗ —", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, y + 60, "кнопка ₽ рядом с предметом.", UiKit.COL_TEXT_DIM);
 		}
 		int listY = y + 22;
 		int visible = Math.min(entries.size(), 6);
 		for (int idx = 0; idx < visible; idx++) {
 			NbtCompound e = entries.get(idx);
-			int ry = listY + idx * 19;
-			UiKit.card(ctx, x + 8, ry, PW - 16, 17, UiKit.COL_PANEL);
+			int ry = listY + idx * 22;
+			UiKit.card(ctx, x + 8, ry, PW - 16, 20, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "itemId")));
-			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry);
-			UiKit.label(ctx, textRenderer, x + 32, ry + 1, trim(str(e, "name"), 18) + " ×" + i(e, "count"),
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
+			UiKit.label(ctx, textRenderer, x + 34, ry + 2, trim(str(e, "name"), 20) + " ×" + i(e, "count"),
 					UiKit.COL_TEXT);
-			UiKit.label(ctx, textRenderer, x + 32, ry + 9,
-					"от " + trim(str(e, "seller"), 12) + " · " + i(e, "price") + " CR/шт", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
+					"от " + trim(str(e, "seller"), 13) + " · " + i(e, "price") + " CR/шт", UiKit.COL_TEXT_DIM);
 			long total = (long) i(e, "price") * i(e, "count");
-			UiKit.button(ctx, textRenderer, x + PW - 64, ry + 2, 56, 13, total + " CR", mx, my,
+			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
 					lng(data, "balance") >= total);
 			final long lid = lng(e, "lid");
-			clickable(x + PW - 64, ry + 2, 56, 13, () -> {
+			clickable(x + PW - 68, ry + 3, 60, 14, () -> {
 				NbtCompound a = new NbtCompound();
 				a.putLong("lid", lid);
 				send("market_buy", a);
@@ -751,13 +755,13 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 		int page = i(market, "page");
 		int pages = i(market, "pages");
-		int py2 = y + 142;
-		UiKit.button(ctx, textRenderer, x + 8, py2, 18, 13, "<", mx, my, page > 0);
-		clickable(x + 8, py2, 18, 13, () -> marketQuery(Math.max(0, page - 1)));
-		UiKit.label(ctx, textRenderer, x + 32, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
-		UiKit.button(ctx, textRenderer, x + 88, py2, 18, 13, ">", mx, my, page + 1 < pages);
-		clickable(x + 88, py2, 18, 13, () -> marketQuery(page + 1));
-		UiKit.label(ctx, textRenderer, x + PW - 130, py2 + 3, "листится из ПВЗ (кнопка ₽)", UiKit.COL_TEXT_DIM);
+		int py2 = y + 160;
+		UiKit.button(ctx, textRenderer, x + 8, py2, 18, 14, "<", mx, my, page > 0);
+		clickable(x + 8, py2, 18, 14, () -> marketQuery(Math.max(0, page - 1)));
+		UiKit.label(ctx, textRenderer, x + 34, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, x + 92, py2, 18, 14, ">", mx, my, page + 1 < pages);
+		clickable(x + 92, py2, 18, 14, () -> marketQuery(page + 1));
+		UiKit.label(ctx, textRenderer, x + PW - 140, py2 + 3, "листится из ПВЗ (₽)", UiKit.COL_TEXT_DIM);
 	}
 
 	private void marketQuery(int page) {
@@ -809,43 +813,55 @@ public class PhoneScreen extends CraftNetScreen {
 			lockOverlay(ctx, x, y, "Нужен 3G+ для биржи");
 			return;
 		}
+		var stocks = rows(data, "stocks");
+		// портфельная сводка
+		long portVal = 0;
+		int portCnt = 0;
+		for (NbtCompound s0 : stocks) {
+			portCnt += i(s0, "owned");
+			portVal += Math.round(i(s0, "owned") * dbl(s0, "price"));
+		}
+		String port = portCnt > 0 ? "Портфель: " + portVal + " CR (" + portCnt + " шт.)" : "портфель пуст";
+		UiKit.label(ctx, textRenderer, x + 8, y + 3, port, portCnt > 0 ? UiKit.COL_YELLOW : UiKit.COL_TEXT_DIM);
+		String hint = "пульс цен ~5 с";
+		ctx.drawText(textRenderer, Text.literal(hint), x + PW - 8 - textRenderer.getWidth(hint), y + 3,
+				UiKit.COL_TEXT_DIM, false);
+		// новостная лента (последнее)
 		var news = rows(data, "stNews");
-		int ry = y + 2;
 		if (!news.isEmpty()) {
 			NbtCompound n0 = news.get(0);
 			int dir = i(n0, "dir");
 			String pc = (dir >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.0f", dbl(n0, "pct")) + "%";
-			UiKit.label(ctx, textRenderer, x + 8, ry,
-					"Новости: " + trim(str(n0, "txt") + " (" + pc + ")", 42),
+			UiKit.label(ctx, textRenderer, x + 8, y + 13,
+					trim(str(n0, "txt") + " (" + pc + ")", 46),
 					dir >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
-			ry += 11;
 		}
-		var stocks = rows(data, "stocks");
+		int ry = y + 25;
 		for (NbtCompound s : stocks) {
-			UiKit.card(ctx, x + 8, ry, PW - 16, 30, UiKit.COL_PANEL);
+			UiKit.card(ctx, x + 8, ry, PW - 16, 29, UiKit.COL_PANEL);
 			String id = str(s, "id");
 			UiKit.label(ctx, textRenderer, x + 14, ry + 3, id + " · " + trim(str(s, "name"), 12), UiKit.COL_TEXT);
 			double price = dbl(s, "price");
 			double delta = dbl(s, "delta");
-			String ds = (delta >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.1f", delta) + "%";
-			ctx.drawText(textRenderer, Text.literal(ds), x + 202 - textRenderer.getWidth(ds), ry + 3,
+			String ds = (delta >= 0 ? "+" : "") + String.format(java.util.Locale.ROOT, "%.2f", delta) + "%";
+			ctx.drawText(textRenderer, Text.literal(ds), x + 212 - textRenderer.getWidth(ds), ry + 3,
 					delta >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED, false);
-			UiKit.label(ctx, textRenderer, x + 14, ry + 13,
+			UiKit.label(ctx, textRenderer, x + 14, ry + 12,
 					String.format(java.util.Locale.ROOT, "%.2f", price) + " CR", UiKit.COL_YELLOW);
-			UiKit.label(ctx, textRenderer, x + 14, ry + 21,
-					"у вас: " + i(s, "owned") + " · див " + String.format(java.util.Locale.ROOT, "%.1f", dbl(s, "div")) + "%/д",
-					UiKit.COL_TEXT_DIM);
-			drawSparkline(ctx, x + 146, ry + 11, 56, 14, s.getIntArray("hist").orElse(new int[0]));
+			UiKit.label(ctx, textRenderer, x + 14, ry + 20,
+					"у вас: " + i(s, "owned") + " · див " + String.format(java.util.Locale.ROOT, "%.1f", dbl(s, "div")) + "%/д"
+							+ " · " + i(s, "lo") + "…" + i(s, "hi"), UiKit.COL_TEXT_DIM);
+			drawSparkline(ctx, x + 152, ry + 10, 52, 14, s.getIntArray("hist").orElse(new int[0]));
 			// кнопки +1/-1/+10/-10
-			UiKit.button(ctx, textRenderer, x + PW - 64, ry + 3, 26, 11, "+1", mx, my, true);
-			UiKit.button(ctx, textRenderer, x + PW - 64, ry + 16, 26, 11, "-1", mx, my, true);
-			UiKit.button(ctx, textRenderer, x + PW - 36, ry + 3, 28, 11, "+10", mx, my, true);
-			UiKit.button(ctx, textRenderer, x + PW - 36, ry + 16, 28, 11, "-10", mx, my, true);
-			clickable(x + PW - 64, ry + 3, 26, 11, () -> stock(id, true, 1));
-			clickable(x + PW - 64, ry + 16, 26, 11, () -> stock(id, false, 1));
-			clickable(x + PW - 36, ry + 3, 28, 11, () -> stock(id, true, 10));
-			clickable(x + PW - 36, ry + 16, 28, 11, () -> stock(id, false, 10));
-			ry += 32;
+			UiKit.button(ctx, textRenderer, x + PW - 72, ry + 3, 28, 11, "+1", mx, my, true);
+			UiKit.button(ctx, textRenderer, x + PW - 72, ry + 15, 28, 11, "-1", mx, my, true);
+			UiKit.button(ctx, textRenderer, x + PW - 40, ry + 3, 32, 11, "+10", mx, my, true);
+			UiKit.button(ctx, textRenderer, x + PW - 40, ry + 15, 32, 11, "-10", mx, my, true);
+			clickable(x + PW - 72, ry + 3, 28, 11, () -> stock(id, true, 1));
+			clickable(x + PW - 72, ry + 15, 28, 11, () -> stock(id, false, 1));
+			clickable(x + PW - 40, ry + 3, 32, 11, () -> stock(id, true, 10));
+			clickable(x + PW - 40, ry + 15, 32, 11, () -> stock(id, false, 10));
+			ry += 31;
 		}
 	}
 
@@ -1014,33 +1030,38 @@ public class PhoneScreen extends CraftNetScreen {
 
 	private void renderBank(DrawContext ctx, int x, int y, int mx, int my) {
 		// баланс
-		UiKit.card(ctx, x + 8, y + 2, PW - 16, 26, UiKit.COL_PANEL_HI);
+		UiKit.card(ctx, x + 8, y + 2, PW - 16, 24, UiKit.COL_PANEL_HI);
 		UiKit.label(ctx, textRenderer, x + 16, y + 8, "Баланс", UiKit.COL_TEXT_DIM);
 		String bal = lng(data, "balance") + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 16 - textRenderer.getWidth(bal), y + 8,
 				UiKit.COL_YELLOW, false);
-		UiKit.label(ctx, textRenderer, x + 60, y + 8, "процент 0.15%/день", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 70, y + 8, "процент 0.15%/день от 50 CR", UiKit.COL_TEXT_DIM);
 
-		// перевод игроку
-		UiKit.card(ctx, x + 8, y + 34, PW - 16, 40, UiKit.COL_PANEL);
-		UiKit.label(ctx, textRenderer, x + 16, y + 40, "Перевод игроку онлайн (нужен 2G):", UiKit.COL_ACCENT);
-		UiKit.button(ctx, textRenderer, x + 174, y + 58, 90, 15, "Отправить", mx, my,
+		// перевод игроку (поля ввода живут внутри карточки)
+		UiKit.card(ctx, x + 8, y + 30, PW - 16, 46, UiKit.COL_PANEL);
+		UiKit.label(ctx, textRenderer, x + 16, y + 36, "Перевод игроку онлайн (нужен 2G):", UiKit.COL_ACCENT);
+		UiKit.button(ctx, textRenderer, x + PW - 104, y + 50, 96, 16, "Отправить", mx, my,
 				canTransfer());
-		clickable(x + 174, y + 58, 90, 15, this::sendTransfer);
+		clickable(x + PW - 104, y + 50, 96, 16, this::sendTransfer);
 
 		// история
-		UiKit.card(ctx, x + 8, y + 80, PW - 16, 104, UiKit.COL_PANEL);
-		UiKit.label(ctx, textRenderer, x + 16, y + 86, "История операций", UiKit.COL_ACCENT);
-		String[] lines = str(data, "tx").isEmpty() ? new String[0] : str(data, "tx").split("\\n");
+		UiKit.card(ctx, x + 8, y + 82, PW - 16, 106, UiKit.COL_PANEL);
+		UiKit.label(ctx, textRenderer, x + 16, y + 89, "История операций", UiKit.COL_ACCENT);
+		String[] lines = str(data, "tx").isEmpty() ? new String[0] : str(data, "tx").split("\n");
 		if (lines.length == 0) {
-			UiKit.label(ctx, textRenderer, x + 16, y + 100, "пока пусто", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 16, y + 104, "пока пусто", UiKit.COL_TEXT_DIM);
 		}
-		int ly = y + 98;
+		int ly = y + 101;
+		int rowIdx = 0;
 		for (int k = Math.max(0, lines.length - 8); k < lines.length; k++) {
 			String l = lines[k];
+			if (rowIdx % 2 == 0) {
+				ctx.fill(x + 12, ly - 1, x + PW - 12, ly + 9, 0x14FFFFFF);
+			}
 			int col = l.startsWith("+") ? UiKit.COL_GREEN : UiKit.COL_TEXT;
-			UiKit.label(ctx, textRenderer, x + 16, ly, trim(l, 50), col);
-			ly += 10;
+			UiKit.label(ctx, textRenderer, x + 16, ly, trim(l, 48), col);
+			ly += 11;
+			rowIdx++;
 		}
 	}
 

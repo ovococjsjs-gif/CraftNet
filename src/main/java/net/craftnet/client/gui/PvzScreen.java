@@ -105,7 +105,7 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.card(ctx, x + 4, ry, w - 8, ROW_STEP - 3, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(c, "itemId")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 8, ry + 4);
-			UiKit.label(ctx, textRenderer, x + 28, ry + 3, trim(str(c, "name"), 13) + " ×" + i(c, "count"),
+			UiKit.label(ctx, textRenderer, x + 28, ry + 3, trim(str(c, "name"), 15) + " ×" + i(c, "count"),
 					UiKit.COL_TEXT);
 			boolean ready = i(c, "readyNow") == 1;
 			if (ready) {
@@ -157,7 +157,7 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.card(ctx, x + 4, ry, w - 8, ROW_STEP - 5, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(c, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 8, ry + 3);
-			UiKit.label(ctx, textRenderer, x + 28, ry + 2, trim(str(c, "name"), 8) + " ×" + i(c, "count"),
+			UiKit.label(ctx, textRenderer, x + 28, ry + 2, trim(str(c, "name"), 10) + " ×" + i(c, "count"),
 					UiKit.COL_TEXT);
 			UiKit.label(ctx, textRenderer, x + 28, ry + 12, i(c, "price") + " CR/шт", UiKit.COL_YELLOW);
 			final String fid = str(c, "id");
