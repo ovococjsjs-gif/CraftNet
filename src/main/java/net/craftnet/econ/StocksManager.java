@@ -17,43 +17,56 @@ import net.craftnet.state.StocksState;
 import net.craftnet.util.Nbt2;
 
 /**
- * Биржа CraftNet 2.0:
- *  - 5 компаний, случайное блуждание цены (пульс каждые 600 тиков), спред 2%;
- *  - дивиденды: раз в игровые сутки держателям капает доля от стоимости пакета
- *    (работает и для офлайн-игроков — баланс начисляется в PersistentState);
- *  - рыночные события: случайный шок цены ±6..20% с новостью в ленте,
- *    лента (последние 8) видна в телефоне, свежие — в чате всем онлайн.
- * История цен хранится в санти-кредитах (int = CR * 100).
+ * Биржа CraftNet 3.0 — живой рынок:
+ *  - цены дышут ПОСТОЯННО: микро-пульс каждые 100 тиков (5 с) — небольшой
+ *    гауссов шаг + мягкий возврат к блуждающему «якорю»;
+ *  - у каждой компании свой интересный коридор и характер: спокойный банк,
+ *    дикая крипер-энергетика, растущие эндер-технологии и т.д.;
+ *  - редкие спайки ±3..9% на пульсе, новости с шоком ±6..20% каждые 2-4 мин;
+ *  - дивиденды раз в игровые сутки; каждая выплата логируется в консоль
+ *    сервера (в расследовании фантомных начислений — прецедент смотреть там);
+ *  - история 96 точек с шагом 20 с — график всегда живой.
  */
 public final class StocksManager {
 	private StocksManager() {}
 
 	public static final double SPREAD = 0.02;
-	private static final int HISTORY_MAX = 48;
+	private static final int HISTORY_MAX = 96;
 	private static final int NEWS_MAX = 8;
 	private static final double MIN_PRICE = 5.0;
 	private static final double MAX_PRICE = 5000.0;
-	private static final double NEWS_CHANCE = 0.10; // на каждый пульс цен
+	private static final int HIST_EVERY = 4;      // каждый 4-й пульс (20 с)
+	private static final double SPIKE_CHANCE = 0.012; // на пульс, ±3..9%
+	private static final long NEWS_MIN_GAP = 2400;  // тиков (2 мин)
+	private static final long NEWS_MAX_GAP = 4800;  // (4 мин)
 
 	public enum Company {
-		REDR("REDR", "РедстоунКорп", 120.0, 0.030, 0.008),
-		ENDT("ENDT", "ЭндерТех", 260.0, 0.045, 0.004),
-		CRPR("CRPR", "КриперЭнерджи", 75.0, 0.055, 0.012),
-		VLBK("VLBK", "ЖительБанк", 180.0, 0.020, 0.016),
-		NFSH("NFSH", "НезерСталь", 340.0, 0.035, 0.006);
+		//                    id      ruName            lo    hi    vol     revert  divYield
+		REDR("REDR", "РедстоунКорп",  90, 170, 0.006, 0.06, 0.008),
+		CRPR("CRPR", "КриперЭнерджи", 35, 150, 0.014, 0.04, 0.012),
+		VLBK("VLBK", "ЖительБанк",   140, 230, 0.0035, 0.08, 0.016),
+		ENDT("ENDT", "ЭндерТех",     180, 400, 0.009, 0.05, 0.004),
+		NFSH("NFSH", "НезерСталь",   240, 520, 0.011, 0.05, 0.006);
 
 		public final String id;
 		public final String ruName;
-		public final double basePrice;
-		public final double volatility;
+		/** Интересный коридор, внутри которого блуждает якорь цены. */
+		public final double lo;
+		public final double hi;
+		/** σ микро-пульса (доля цены) — «как сильно дышит». */
+		public final double microVol;
+		/** Сила возврата к якорю за пульс (доля от расстояния). */
+		public final double revert;
 		/** Дивидендная доходность: доля от рыночной цены пакета за игровые сутки. */
 		public final double divYield;
 
-		Company(String id, String ruName, double basePrice, double volatility, double divYield) {
+		Company(String id, String ruName, double lo, double hi, double microVol, double revert, double divYield) {
 			this.id = id;
 			this.ruName = ruName;
-			this.basePrice = basePrice;
-			this.volatility = volatility;
+			this.lo = lo;
+			this.hi = hi;
+			this.microVol = microVol;
+			this.revert = revert;
 			this.divYield = divYield;
 		}
 
@@ -91,7 +104,7 @@ public final class StocksManager {
 		return Nbt2.sub(root, "comp");
 	}
 
-	/** Создаёт компании при первом запуске мира. */
+	/** Создаёт компании при первом запуске мира / мигрирует старые записи. */
 	public static void ensureDefaults(MinecraftServer server) {
 		StocksState st = get(server);
 		NbtCompound comp = comps(st.data());
@@ -99,22 +112,29 @@ public final class StocksManager {
 		for (Company c : Company.values()) {
 			NbtCompound e = comp.getCompound(c.id).orElseGet(NbtCompound::new);
 			if (Nbt2.dbl(e, "price") <= 0) {
-				double start = c.basePrice * (1 + RNG.nextGaussian() * 0.05);
+				double start = (c.lo + c.hi) / 2.0 * (1 + RNG.nextGaussian() * 0.03);
 				e.putDouble("price", start);
 				e.putIntArray("hist", new int[]{(int) Math.round(start * 100)});
-				comp.put(c.id, e);
 				dirty = true;
 			}
+			if (Nbt2.dbl(e, "anchor") <= 0) {
+				e.putDouble("anchor", clampPrice(Nbt2.dbl(e, "price"), c));
+				dirty = true;
+			}
+			if (dirty) comp.put(c.id, e);
 		}
-		// метка последнего дивидендного дня — без ретро-выплат при первом запуске
 		NbtCompound meta = Nbt2.sub(st.data(), "meta");
 		if (!meta.contains("lastDivDay")) {
 			meta.putLong("lastDivDay", worldDay(server));
-			st.data().put("meta", meta);
+			dirty = true;
+		}
+		if (!meta.contains("nextNews") || meta.getLong("nextNews", 0L) <= 0) {
+			meta.putLong("nextNews", server.getTicks() + NEWS_MIN_GAP);
 			dirty = true;
 		}
 		if (dirty) {
 			st.data().put("comp", comp);
+			st.data().put("meta", meta);
 			st.markDirty();
 		}
 	}
@@ -124,8 +144,8 @@ public final class StocksManager {
 	}
 
 	/**
-	 * Тик биржи (вызывается раз в 600 тиков = 30 секунд):
-	 * сначала дневные дивиденды, затем пульс цен и возможное событие.
+	 * Пульс биржи — вызывается каждые 100 тиков (5 с):
+	 * дивиденды по смене дня → микро-шаг цен → история → новости по расписанию.
 	 */
 	public static void tick(MinecraftServer server) {
 		ensureDefaults(server);
@@ -141,37 +161,64 @@ public final class StocksManager {
 			payDividends(server);
 		}
 
-		// --- пульс цен ---
+		// --- микро-пульс: якорь блуждает в коридоре, цена тянется к якорю ---
 		NbtCompound comp = comps(st.data());
+		long pulse = meta.getLong("pulse", 0L) + 1;
+		boolean takeHist = pulse % HIST_EVERY == 0;
 		for (Company c : Company.values()) {
 			NbtCompound e = comp.getCompound(c.id).orElseGet(NbtCompound::new);
-			double price = Nbt2.dbl(e, "price");
-			double drift = RNG.nextGaussian() * 0.004;
-			double shock = RNG.nextGaussian() * c.volatility;
-			if (RNG.nextDouble() < 0.01) {
-				shock += (RNG.nextBoolean() ? 1 : -1) * (0.10 + RNG.nextDouble() * 0.15);
+			double price = price(e);
+			double anchor = anchor(e);
+			// якорь: медленное блуждание внутри именного коридора
+			anchor += RNG.nextGaussian() * 0.0012 * anchor;
+			anchor = Math.max(c.lo, Math.min(c.hi, anchor));
+			// цена: постоянное малое дыхание + мягкий возврат + редкие спайки
+			double step = RNG.nextGaussian() * c.microVol * price
+					+ (anchor - price) * c.revert;
+			if (RNG.nextDouble() < SPIKE_CHANCE) {
+				step += price * (RNG.nextBoolean() ? 1 : -1) * (0.03 + RNG.nextDouble() * 0.06);
 			}
-			price = clampPrice(price * (1.0 + drift + shock));
+			price = clampPrice(price + step, c);
 			e.putDouble("price", price);
-			int[] hist = e.getIntArray("hist").orElse(new int[0]);
-			int[] nh = new int[Math.min(HISTORY_MAX, hist.length + 1)];
-			System.arraycopy(hist, Math.max(0, hist.length - (HISTORY_MAX - 1)),
-					nh, 0, Math.min(hist.length, HISTORY_MAX - 1));
-			nh[nh.length - 1] = (int) Math.round(price * 100);
-			e.putIntArray("hist", nh);
+			e.putDouble("anchor", anchor);
+			if (takeHist) {
+				int[] hist = e.getIntArray("hist").orElse(new int[0]);
+				int[] nh = new int[Math.min(HISTORY_MAX, hist.length + 1)];
+				System.arraycopy(hist, Math.max(0, hist.length - (HISTORY_MAX - 1)),
+						nh, 0, Math.min(hist.length, HISTORY_MAX - 1));
+				nh[nh.length - 1] = (int) Math.round(price * 100);
+				e.putIntArray("hist", nh);
+			}
 			comp.put(c.id, e);
 		}
+		meta.putLong("pulse", pulse);
 		st.data().put("comp", comp);
+		st.data().put("meta", meta);
 		st.markDirty();
 
-		// --- рыночное событие/новость ---
-		if (RNG.nextDouble() < NEWS_CHANCE) {
+		// --- новость по расписанию ---
+		if (server.getTicks() >= meta.getLong("nextNews", Long.MAX_VALUE)) {
 			fireNewsEvent(server);
+			NbtCompound meta2 = Nbt2.sub(st.data(), "meta");
+			meta2.putLong("nextNews", server.getTicks() + NEWS_MIN_GAP
+					+ RNG.nextLong(NEWS_MAX_GAP - NEWS_MIN_GAP));
+			st.data().put("meta", meta2);
+			st.markDirty();
 		}
 	}
 
-	private static double clampPrice(double p) {
-		return Math.max(MIN_PRICE, Math.min(MAX_PRICE, p));
+	private static double price(NbtCompound e) {
+		return Nbt2.dbl(e, "price");
+	}
+
+	private static double anchor(NbtCompound e) {
+		return Nbt2.dbl(e, "anchor");
+	}
+
+	private static double clampPrice(double p, Company c) {
+		// цена может вылетать за коридор якоря, но не более чем на ~35%
+		return Math.max(MIN_PRICE, Math.min(MAX_PRICE,
+				Math.max(c.lo * 0.65, Math.min(c.hi * 1.35, p))));
 	}
 
 	/** Событие: у случайной компании шок цены + новость в ленту и в чат. */
@@ -186,7 +233,7 @@ public final class StocksManager {
 		StocksState st = get(server);
 		NbtCompound comp = comps(st.data());
 		NbtCompound e = comp.getCompound(c.id).orElseGet(NbtCompound::new);
-		double price = clampPrice(Nbt2.dbl(e, "price") * (1.0 + dir * pct));
+		double price = clampPrice(price(e) * (1.0 + dir * pct), c);
 		e.putDouble("price", price);
 		comp.put(c.id, e);
 		st.data().put("comp", comp);
@@ -203,7 +250,6 @@ public final class StocksManager {
 		st.data().put("news", news);
 		st.markDirty();
 
-		// чат всем онлайн
 		Text msg = Text.literal("[Биржа] " + txt + " (" + (dir > 0 ? "+" : "")
 				+ String.format(java.util.Locale.ROOT, "%.0f", pct * 100.0) + "%)")
 				.formatted(dir > 0 ? Formatting.GREEN : Formatting.RED);
@@ -212,7 +258,10 @@ public final class StocksManager {
 		}
 	}
 
-	/** Выплата дивидендов всем держателям (включая офлайн). */
+	/**
+	 * Выплата дивидендов всем держателям (включая офлайн).
+	 * ЖЁСТКАЯ защита: платим только за >0 акций; каждая выплата — в лог сервера.
+	 */
 	private static void payDividends(MinecraftServer server) {
 		StocksState st = get(server);
 		NbtCompound hold = Nbt2.sub(st.data(), "hold");
@@ -225,16 +274,21 @@ public final class StocksManager {
 			}
 			NbtCompound rec = hold.getCompound(uuidStr).orElseGet(NbtCompound::new);
 			long total = 0;
+			StringBuilder dbg = new StringBuilder();
 			for (Company c : Company.values()) {
 				int n = rec.getInt(c.id, 0);
-				if (n <= 0) continue;
-				double price = Nbt2.dbl(comps(st.data()).getCompound(c.id).orElseGet(NbtCompound::new), "price");
-				long pay = Math.round(price * n * c.divYield);
+				if (n <= 0) continue; // нет акций — нет дивидендов, точка
+				double price = price(comps(st.data()).getCompound(c.id).orElseGet(NbtCompound::new));
+				long pay = Math.min(10_000, Math.round(price * n * c.divYield));
 				if (pay <= 0) continue;
 				MoneyManager.add(server, uuid, pay, "дивиденды " + c.id);
 				total += pay;
+				if (dbg.length() > 0) dbg.append(", ");
+				dbg.append(c.id).append("×").append(n).append("=+").append(pay);
 			}
 			if (total > 0) {
+				net.craftnet.CraftNet.LOGGER.info("[CraftNet] Дивиденды (день {}) {}: +{} CR ({})",
+						worldDay(server), uuidStr.substring(0, 8), total, dbg);
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(uuid);
 				if (p != null) {
 					p.sendMessage(Text.translatable("craftnet.stocks.dividend", total), false);
@@ -245,7 +299,7 @@ public final class StocksManager {
 	}
 
 	public static double price(MinecraftServer server, String id) {
-		return Nbt2.dbl(comps(get(server).data()).getCompound(id.toUpperCase()).orElseGet(NbtCompound::new), "price");
+		return price(comps(get(server).data()).getCompound(id.toUpperCase()).orElseGet(NbtCompound::new));
 	}
 
 	public static double prevPrice(MinecraftServer server, String id) {
@@ -314,6 +368,8 @@ public final class StocksManager {
 			row.putIntArray("hist", history(server, c.id));
 			row.putInt("owned", owned(server, player, c.id));
 			row.putDouble("div", c.divYield * 100.0); // доходность %/день
+			row.putInt("lo", (int) c.lo);
+			row.putInt("hi", (int) c.hi);
 			out.add(row);
 		}
 		return out;
