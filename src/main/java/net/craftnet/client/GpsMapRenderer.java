@@ -18,12 +18,13 @@ import net.craftnet.client.gui.UiKit;
 import net.craftnet.client.gl.RenderPipelinesHolder;
 
 /**
- * GPS-карта: собираем вид сверху из загруженных клиентом чанков
- * в динамическую текстуру 128x128 (1 пиксель = 1 блок).
+ * GPS-карта 2.0: вид сверху из загруженных клиентом чанков в динамическую
+ * текстуру 160x160. Зум: 1, 2 или 4 блока на пиксель — карта «ездит»
+ * за игроком и пересэмплируется по движению, а не по таймеру.
  */
 @Environment(EnvType.CLIENT)
 public final class GpsMapRenderer {
-	public static final int SIZE = 128;
+	public static final int SIZE = 160;
 
 	private final NativeImageBackedTexture texture;
 	private final Identifier id = CraftNet.id("gps_dynamic");
@@ -32,6 +33,8 @@ public final class GpsMapRenderer {
 	private long lastTick = -1;
 	private int lastCX = Integer.MIN_VALUE;
 	private int lastCZ = Integer.MIN_VALUE;
+	private int zoom = 1;
+	private int lastZoom = -1;
 
 	public GpsMapRenderer() {
 		texture = new NativeImageBackedTexture(() -> "craftnet/gps", SIZE, SIZE, true);
@@ -43,24 +46,36 @@ public final class GpsMapRenderer {
 		MinecraftClient.getInstance().getTextureManager().registerTexture(id, texture);
 	}
 
-	/** Пересэмплировать карту вокруг игрока (не чаще раза в 15 тиков). */
+	public int zoom() {
+		return zoom;
+	}
+
+	/** Цикл зума 1 → 2 → 4 → 1. */
+	public void cycleZoom(int dir) {
+		zoom = dir >= 0 ? (zoom == 4 ? 1 : zoom * 2) : (zoom == 1 ? 4 : zoom / 2);
+		lastTick = -1; // форс-пересэмпл
+	}
+
+	/** Пересэмплировать карту вокруг игрока (по движению/зуму, не чаще 10 тиков). */
 	public void resampleIfNeeded(ClientPlayerEntity player, ClientWorld world) {
 		ensureRegistered();
 		long tick = world.getTime();
 		int cx = player.getBlockPos().getX();
 		int cz = player.getBlockPos().getZ();
-		boolean moved = Math.abs(cx - lastCX) > 3 || Math.abs(cz - lastCZ) > 3;
-		if (!moved && tick - lastTick < 20) return;
+		boolean moved = Math.abs(cx - lastCX) > zoom * 2 || Math.abs(cz - lastCZ) > zoom * 2;
+		boolean zoomChanged = zoom != lastZoom;
+		if (!zoomChanged && !moved && tick - lastTick < 10) return;
 		lastTick = tick;
 		lastCX = cx;
 		lastCZ = cz;
+		lastZoom = zoom;
 
 		NativeImage img = texture.getImage();
 		if (img == null) return;
 		for (int py = 0; py < SIZE; py++) {
-			int wz = cz + (py - SIZE / 2);
+			int wz = cz + (py - SIZE / 2) * zoom;
 			for (int px = 0; px < SIZE; px++) {
-				int wx = cx + (px - SIZE / 2);
+				int wx = cx + (px - SIZE / 2) * zoom;
 				img.setColorArgb(px, py, sampleColumn(world, wx, wz));
 			}
 		}
@@ -94,7 +109,7 @@ public final class GpsMapRenderer {
 		return 0xFF000000 | (r << 16) | (g << 8) | b;
 	}
 
-	/** Нарисовать карту в прямоугольник x,y. */
+	/** Нарисовать карту в прямоугольник x,y (160x160). */
 	public void draw(DrawContext ctx, int x, int y) {
 		ctx.drawTexture(RenderPipelinesHolder.guiTextured(), id, x, y, 0f, 0f, SIZE, SIZE, SIZE, SIZE);
 		ctx.drawHorizontalLine(x, x + SIZE - 1, y, UiKit.COL_LINE);

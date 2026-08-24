@@ -51,6 +51,8 @@ public class PhoneScreen extends CraftNetScreen {
 	private double animAngleFrom = -95;
 	private double animFinalAngle;
 	private int animLastMark = -1;
+	private int lastMouseX;
+	private int lastMouseY;
 	private UiKit.TextInput payeeInput;
 	private UiKit.TextInput amountInput;
 
@@ -884,6 +886,9 @@ public class PhoneScreen extends CraftNetScreen {
 
 	// ------------------------------ GPS ------------------------------
 
+	private boolean hasWaypoint;
+	private int wpX, wpZ;
+
 	private void renderGps(DrawContext ctx, int x, int y, int mx, int my) {
 		if (i(data, "gpsOk") != 1) {
 			lockOverlay(ctx, x, y, "Нет сигнала GPS (глубоко под землёй)");
@@ -892,37 +897,117 @@ public class PhoneScreen extends CraftNetScreen {
 		if (mc() == null || mc().player == null || mc().world == null) return;
 		if (map == null) map = new GpsMapRenderer();
 		map.resampleIfNeeded(mc().player, mc().world);
+		lastMouseX = mx;
+		lastMouseY = my;
 
-		int mxp = x + (PW - GpsMapRenderer.SIZE) / 2;
-		int myp = y + 2;
-		map.draw(ctx, mxp, myp);
-
-		// игрок — центр
-		int cx = mxp + GpsMapRenderer.SIZE / 2;
-		int cy = myp + GpsMapRenderer.SIZE / 2;
-		ctx.fill(cx - 2, cy - 2, cx + 3, cy + 3, 0xFFFFFFFF);
-
-		// метки деревень
 		int pX = mc().player.getBlockPos().getX();
 		int pZ = mc().player.getBlockPos().getZ();
+		int zoom = map.zoom();
+
+		int mxp = x + 8;
+		int myp = y + 2;
+		map.draw(ctx, mxp, myp);
+		int cxm = mxp + GpsMapRenderer.SIZE / 2;
+		int cym = myp + GpsMapRenderer.SIZE / 2;
+		final int fmxp = mxp, fmyp = myp;
+
+		// клик по карте — точка маршрута (метка хранится, пока открыт экран)
+		clickable(mxp, myp, GpsMapRenderer.SIZE, GpsMapRenderer.SIZE, () -> {
+			hasWaypoint = true;
+			wpX = pX + (int) Math.round(((lastMouseX - fmxp) - GpsMapRenderer.SIZE / 2.0) * zoom);
+			wpZ = pZ + (int) Math.round(((lastMouseY - fmyp) - GpsMapRenderer.SIZE / 2.0) * zoom);
+		});
+
+		// метки деревень
 		for (NbtCompound v : rows(data, "villages")) {
-			int dx = i(v, "x") - pX;
-			int dz = i(v, "z") - pZ;
-			int vx = cx + Math.max(-60, Math.min(60, dx));
-			int vz = cy + Math.max(-60, Math.min(60, dz));
+			int dx = (i(v, "x") - pX) / zoom;
+			int dz = (i(v, "z") - pZ) / zoom;
+			int vx = cxm + Math.max(-78, Math.min(78, dx));
+			int vz = cym + Math.max(-78, Math.min(78, dz));
 			int col = i(v, "off") == 1 ? 0xFFF85149 : 0xFF3FB950;
 			ctx.fill(vx - 2, vz - 2, vx + 2, vz + 2, col);
-			String nm = str(v, "name");
-			int nw = Math.min(textRenderer.getWidth(nm), 80);
-			ctx.drawText(textRenderer, Text.literal(nm), vx - nw / 2, vz + 4, UiKit.COL_TEXT, true);
-			String dlab = i(v, "d") + " м";
-			ctx.drawText(textRenderer, Text.literal(dlab), vx - textRenderer.getWidth(dlab) / 2, vz + 13, UiKit.COL_TEXT_DIM, true);
 		}
+		// метка маршрута (ромб)
+		if (hasWaypoint) {
+			int dx = (wpX - pX) / zoom;
+			int dz = (wpZ - pZ) / zoom;
+			int wx = Math.max(mxp + 2, Math.min(mxp + GpsMapRenderer.SIZE - 2, cxm + dx));
+			int wz = Math.max(myp + 2, Math.min(myp + GpsMapRenderer.SIZE - 2, cym + dz));
+			diamond(ctx, wx, wz, 0xFF58A6FF);
+		}
+		// цель активной работы (оранжевый ромб + буква Р)
+		NbtCompound nav = sub(data, "jobNav");
+		if (!nav.isEmpty()) {
+			int dx = (i(nav, "x") - pX) / zoom;
+			int dz = (i(nav, "z") - pZ) / zoom;
+			int tx = Math.max(mxp + 2, Math.min(mxp + GpsMapRenderer.SIZE - 2, cxm + dx));
+			int tz = Math.max(myp + 2, Math.min(myp + GpsMapRenderer.SIZE - 2, cym + dz));
+			diamond(ctx, tx, tz, 0xFFFFA63D);
+			UiKit.label(ctx, textRenderer, tx + 4, tz - 3, "Р", 0xFFFFA63D);
+		}
+		// игрок — стрелка по направлению взгляда
+		double rad = Math.toRadians(mc().player.getYaw());
+		int vx = (int) Math.round(Math.sin(rad));       // смотрим «вверх» на карте при yaw, повёрнутом на север
+		int vy = (int) Math.round(-Math.cos(rad));
+		ctx.fill(cxm - 2, cym - 2, cxm + 2, cym + 2, 0xFFFFFFFF);
+		ctx.fill(cxm + vx * 2, cym + vy * 2, cxm + vx * 2 + 2, cym + vy * 2 + 2, 0xFF58A6FF);
+		ctx.fill(cxm + vx * 4, cym + vy * 4, cxm + vx * 4 + 1, cym + vy * 4 + 1, 0xFF58A6FF);
+
+		// ================= правая колонка =================
+		int rx = x + 176;
+		int rw = PW - 176 - 8;
+		UiKit.card(ctx, rx, y + 2, rw, 30, UiKit.COL_PANEL);
+		UiKit.label(ctx, textRenderer, rx + 6, y + 7, "Масштаб", UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, rx + 6, y + 17, 16, 12, "-", mx, my, zoom > 1);
+		clickable(rx + 6, y + 17, 16, 12, () -> map.cycleZoom(-1));
+		UiKit.label(ctx, textRenderer, rx + 26, y + 19, zoom + ":1", UiKit.COL_YELLOW);
+		UiKit.button(ctx, textRenderer, rx + rw - 22, y + 17, 16, 12, "+", mx, my, zoom < 4);
+		clickable(rx + rw - 22, y + 17, 16, 12, () -> map.cycleZoom(1));
+
+		UiKit.card(ctx, rx, y + 36, rw, 30, UiKit.COL_PANEL);
+		if (hasWaypoint) {
+			UiKit.label(ctx, textRenderer, rx + 6, y + 41, "Метка маршрута", UiKit.COL_ACCENT);
+			int d = (int) Math.round(Math.sqrt((wpX - pX) * (long)(wpX - pX) + (wpZ - pZ) * (long)(wpZ - pZ)));
+			UiKit.label(ctx, textRenderer, rx + 6, y + 52, wpX + ", " + wpZ + " · " + d + " м", UiKit.COL_TEXT);
+			UiKit.button(ctx, textRenderer, rx + rw - 18, y + 39, 12, 11, "✕", mx, my, true);
+			clickable(rx + rw - 18, y + 39, 12, 11, () -> hasWaypoint = false);
+		} else {
+			UiKit.label(ctx, textRenderer, rx + 6, y + 41, "Метки нет", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, rx + 6, y + 52, "клик по карте — метка", UiKit.COL_TEXT_DIM);
+		}
+
+		UiKit.card(ctx, rx, y + 70, rw, 92, UiKit.COL_PANEL);
+		UiKit.label(ctx, textRenderer, rx + 6, y + 75, "Деревни рядом", UiKit.COL_ACCENT);
+		int vy2 = y + 87;
+		int rowsShown = 0;
+		for (NbtCompound v : rows(data, "villages")) {
+			if (rowsShown++ >= 5) break;
+			int col = i(v, "off") == 1 ? 0xFFF85149 : 0xFF3FB950;
+			ctx.fill(rx + 7, vy2 + 3, rx + 10, vy2 + 6, col);
+			UiKit.label(ctx, textRenderer, rx + 14, vy2,
+					trim(str(v, "name"), 12), i(v, "off") == 1 ? UiKit.COL_TEXT_DIM : UiKit.COL_TEXT);
+			String dl = i(v, "d") + "м";
+			ctx.drawText(textRenderer, Text.literal(dl), rx + rw - 6 - textRenderer.getWidth(dl), vy2,
+					UiKit.COL_TEXT_DIM, false);
+			vy2 += 14;
+		}
+		if (rowsShown == 0) {
+			UiKit.label(ctx, textRenderer, rx + 6, vy2, "нет данных", UiKit.COL_TEXT_DIM);
+		}
+
+		// футер: координаты
 		int pY = mc().player.getBlockPos().getY();
-		UiKit.label(ctx, textRenderer, mxp, myp + GpsMapRenderer.SIZE + 4,
-				"XYZ: " + pX + " " + pY + " " + pZ + " · 1 пикс = 1 блок", UiKit.COL_TEXT_DIM);
-		// компас
-		UiKit.label(ctx, textRenderer, mxp + GpsMapRenderer.SIZE - 10, myp + 3, "N", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 8, y + 168,
+				"XYZ: " + pX + " " + pY + " " + pZ, UiKit.COL_TEXT);
+		UiKit.label(ctx, textRenderer, x + 8, y + 179,
+				"1 пикс = " + zoom + (zoom == 1 ? " блок" : " блока") + " · клик — метка маршрута",
+				UiKit.COL_TEXT_DIM);
+	}
+
+	private static void diamond(DrawContext ctx, int cx, int cy, int col) {
+		ctx.fill(cx - 1, cy - 3, cx + 1, cy - 2, col);
+		ctx.fill(cx - 2, cy - 2, cx + 2, cy + 2, col);
+		ctx.fill(cx - 1, cy + 2, cx + 1, cy + 3, col);
 	}
 
 	// ------------------------------ Банк ------------------------------

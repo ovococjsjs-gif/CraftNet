@@ -518,6 +518,10 @@ public final class ServerActions {
 		for (NbtCompound v : VillageManager.villagesForGps(player)) villages.add(v);
 		d.put("villages", villages);
 
+		// маркер активной доставки для GPS-вкладки
+		NbtCompound nav = JobManager.navTarget(server, player.getUuid());
+		if (!nav.isEmpty()) d.put("jobNav", nav);
+
 		NbtList stocks = new NbtList();
 		for (NbtCompound row : StocksManager.clientRows(server, player.getUuid())) stocks.add(row);
 		d.put("stocks", stocks);
