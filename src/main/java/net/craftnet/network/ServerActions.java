@@ -21,6 +21,7 @@ import net.minecraft.util.math.BlockPos;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import org.jetbrains.annotations.Nullable;
 
+import net.craftnet.econ.MarketManager;
 import net.craftnet.econ.MoneyManager;
 import net.craftnet.econ.PriceManager;
 import net.craftnet.econ.StocksManager;
@@ -37,7 +38,7 @@ import net.craftnet.village.VillageManager;
 public final class ServerActions {
 	private ServerActions() {}
 
-	private record OpenCtx(String screen, long station, String shopQ, int shopPage) {}
+	private record OpenCtx(String screen, long station, String shopQ, int shopPage, int marketPage) {}
 
 	private static final Map<UUID, OpenCtx> OPEN = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -46,7 +47,7 @@ public final class ServerActions {
 	// ============================== открытие / синхронизация ==============================
 
 	public static void openScreen(ServerPlayerEntity player, String screen, @Nullable BlockPos station) {
-		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0));
+		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0, 0));
 		ServerPlayNetworking.send(player, new ModPackets.OpenScreenS2CPayload(screen, buildSync(player, screen)));
 	}
 
@@ -133,10 +134,17 @@ public final class ServerActions {
 			case "query_shop" -> {
 				if (ctx != null) {
 					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(),
-							args.getString("q", ""), Math.max(0, args.getInt("page", 0))));
+							args.getString("q", ""), Math.max(0, args.getInt("page", 0)), ctx.marketPage()));
 				}
 			}
 			case "buy" -> phoneBuy(player, args);
+			case "market_query" -> {
+				if (ctx != null) {
+					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
+							ctx.shopPage(), Math.max(0, args.getInt("page", 0))));
+				}
+			}
+			case "market_buy" -> marketBuy(player, args);
 			case "stock_buy" -> stockOp(player, args, true);
 			case "stock_sell" -> stockOp(player, args, false);
 			case "transfer" -> {
@@ -207,6 +215,39 @@ public final class ServerActions {
 				Math.max(1, (ready - server.getOverworld().getTime()) / 20)), false);
 	}
 
+	private static void marketBuy(ServerPlayerEntity player, NbtCompound args) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		if (server == null) return;
+		long lid = args.getLong("lid", -1L);
+		if (lid < 0) return;
+		VillageManager.SignalInfo sig = VillageManager.signalFor(player);
+		if (sig.level().tier < SignalLevel.G2.tier) {
+			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
+			return;
+		}
+		var near = VillageManager.nearest(server, player.getBlockPos(), true);
+		if (near.isEmpty()) {
+			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
+			return;
+		}
+		NbtCompound v = near.get();
+		int dist = (int) Math.round(Math.sqrt(player.getBlockPos().getSquaredDistance(new BlockPos(
+				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
+				net.craftnet.util.Nbt2.i(v, "cz")))));
+		long ready = server.getOverworld().getTime()
+				+ (long) OrderManager.BASE_TRAVEL_TICKS * sig.level().travelMultiplier() + dist;
+		int code = MarketManager.buy(server, player, lid,
+				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
+				net.craftnet.util.Nbt2.i(v, "cz"), net.craftnet.util.Nbt2.str(v, "name"), ready);
+		switch (code) {
+			case MarketManager.BUY_OK -> player.sendMessage(Text.translatable("craftnet.market.bought",
+					net.craftnet.util.Nbt2.str(v, "name")), false);
+			case MarketManager.BUY_GONE -> player.sendMessage(Text.translatable("craftnet.market.gone"), false);
+			case MarketManager.BUY_OWN -> player.sendMessage(Text.translatable("craftnet.market.own"), false);
+			default -> player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
+		}
+	}
+
 	private static void stockOp(ServerPlayerEntity player, NbtCompound args, boolean buy) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
@@ -271,6 +312,32 @@ public final class ServerActions {
 				String name = new ItemStack(item).getName().getString();
 				OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + count, ready);
 				player.sendMessage(Text.translatable("craftnet.pvz.sold", count, name, value), false);
+			}
+			case "market_list" -> {
+				String id = args.getString("id", "");
+				int price = args.getInt("price", 0);
+				var near2 = VillageManager.nearest(server, player.getBlockPos(), true);
+				int vx = player.getBlockPos().getX(), vy = 64, vz = player.getBlockPos().getZ();
+				String vname = "ПВЗ";
+				if (near2.isPresent()) {
+					NbtCompound v2 = near2.get();
+					vx = net.craftnet.util.Nbt2.i(v2, "cx");
+					vy = net.craftnet.util.Nbt2.i(v2, "cy");
+					vz = net.craftnet.util.Nbt2.i(v2, "cz");
+					vname = net.craftnet.util.Nbt2.str(v2, "name");
+				}
+				int rc = MarketManager.create(server, player, id, 64, price, vx, vy, vz, vname);
+				switch (rc) {
+					case 0 -> player.sendMessage(Text.translatable("craftnet.market.listed"), false);
+					case 1 -> player.sendMessage(
+							Text.translatable("craftnet.market.limit", MarketManager.MAX_PER_PLAYER), false);
+					case 3 -> player.sendMessage(Text.translatable("craftnet.market.bad_price"), false);
+					default -> player.sendMessage(Text.translatable("craftnet.market.no_item"), false);
+				}
+			}
+			case "market_cancel" -> {
+				int n = MarketManager.cancelMine(server, player);
+				player.sendMessage(Text.translatable("craftnet.market.canceled", n), true);
 			}
 			case "loader_start" -> {
 				if (JobManager.hasJob(server, player.getUuid())) {
@@ -429,6 +496,7 @@ public final class ServerActions {
 		String q = ctx == null ? "" : ctx.shopQ();
 		int page = ctx == null ? 0 : ctx.shopPage();
 		d.put("shop", buildShopPage(q, page));
+		d.put("market", buildMarketPage(server, ctx == null ? 0 : ctx.marketPage()));
 	}
 
 	private record ShopEntry(String id, String name, int buy, int sell, int max) {}
@@ -494,6 +562,26 @@ public final class ServerActions {
 		return shop;
 	}
 
+	private static final int MARKET_PAGE_SIZE = 6;
+
+	private static NbtCompound buildMarketPage(MinecraftServer server, int page) {
+		NbtList rows = MarketManager.clientRows(server); // уже декодировано, свежие первыми
+		NbtCompound d = new NbtCompound();
+		int total = rows.size();
+		int pages = Math.max(1, (int) Math.ceil(total / (double) MARKET_PAGE_SIZE));
+		page = Math.max(0, Math.min(page, pages - 1));
+		d.putInt("page", page);
+		d.putInt("pages", pages);
+		d.putInt("total", total);
+		NbtList entries = new NbtList();
+		int from = page * MARKET_PAGE_SIZE;
+		for (int k = from; k < Math.min(from + MARKET_PAGE_SIZE, total); k++) {
+			if (rows.get(k) instanceof NbtCompound c) entries.add(c);
+		}
+		d.put("entries", entries);
+		return d;
+	}
+
 	private static void fillPvzSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d) {
 		long now = server.getOverworld().getTime();
 		NbtList claims = new NbtList();
@@ -530,6 +618,7 @@ public final class ServerActions {
 		d.put("sell", sell);
 
 		// работа грузчиком прямо с ПВЗ
+		d.putInt("myLots", MarketManager.listingsOf(server, player.getUuid()));
 		d.putInt("hasJob", JobManager.hasJob(server, player.getUuid()) ? 1 : 0);
 		NbtCompound offer = JobManager.hasJob(server, player.getUuid()) ? null : JobManager.buildOffer(player, JobManager.T_LOADER);
 		if (offer != null) d.put("loaderOffer", offer);

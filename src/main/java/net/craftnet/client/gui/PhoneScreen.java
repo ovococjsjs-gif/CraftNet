@@ -20,7 +20,7 @@ import net.craftnet.client.GpsMapRenderer;
  */
 public class PhoneScreen extends CraftNetScreen {
 
-	private enum Tab {HOME, SHOP, STOCKS, GPS, BANK}
+	private enum Tab {HOME, SHOP, MARKET, STOCKS, GPS, BANK}
 
 	private static final int PW = 272;
 	private static final int PH = 224;
@@ -99,16 +99,18 @@ public class PhoneScreen extends CraftNetScreen {
 
 		// панель вкладок
 		int ty = y + 18;
-		drawTabButton(ctx, x + 8, ty, "Дом", 40, Tab.HOME, mx, my);
-		drawTabButton(ctx, x + 54, ty, "Магазин", 56, Tab.SHOP, mx, my);
-		drawTabButton(ctx, x + 116, ty, "Биржа", 52, Tab.STOCKS, mx, my);
-		drawTabButton(ctx, x + 174, ty, "GPS", 36, Tab.GPS, mx, my);
-		drawTabButton(ctx, x + 216, ty, "Банк", 46, Tab.BANK, mx, my);
+		drawTabButton(ctx, x + 8, ty, "Дом", 30, Tab.HOME, mx, my);
+		drawTabButton(ctx, x + 42, ty, "Магазин", 44, Tab.SHOP, mx, my);
+		drawTabButton(ctx, x + 90, ty, "Барахолка", 58, Tab.MARKET, mx, my);
+		drawTabButton(ctx, x + 152, ty, "Биржа", 44, Tab.STOCKS, mx, my);
+		drawTabButton(ctx, x + 200, ty, "GPS", 28, Tab.GPS, mx, my);
+		drawTabButton(ctx, x + 232, ty, "Банк", 36, Tab.BANK, mx, my);
 
 		int cy = y + 36;
 		switch (tab) {
 			case HOME -> renderHome(ctx, x, cy, mx, my);
 			case SHOP -> renderShop(ctx, x, cy, mx, my);
+			case MARKET -> renderMarket(ctx, x, cy, mx, my);
 			case STOCKS -> renderStocks(ctx, x, cy, mx, my);
 			case GPS -> renderGps(ctx, x, cy, mx, my);
 			case BANK -> renderBank(ctx, x, cy, mx, my);
@@ -176,30 +178,33 @@ public class PhoneScreen extends CraftNetScreen {
 	private void renderHome(DrawContext ctx, int x, int y, int mx, int my) {
 		App[] apps = {
 				new App("Магазин", Items.EMERALD.getDefaultStack(), Tab.SHOP),
+				new App("Барахолка", Items.CHEST.getDefaultStack(), Tab.MARKET),
 				new App("Биржа", Items.PAPER.getDefaultStack(), Tab.STOCKS),
 				new App("GPS", Items.FILLED_MAP.getDefaultStack(), Tab.GPS),
 				new App("Банк", Items.GOLD_INGOT.getDefaultStack(), Tab.BANK),
 		};
 		int idx = 0;
 		for (App app : apps) {
-			int ax = x + 14 + (idx % 2) * 125;
-			int ay = y + 4 + (idx / 2) * 56;
-			UiKit.card(ctx, ax, ay, 117, 50, UiKit.COL_PANEL);
-			ctx.drawItem(app.icon(), ax + 10, ay + 17);
-			UiKit.label(ctx, textRenderer, ax + 34, ay + 13, app.name(), UiKit.COL_TEXT);
+			int ax = x + 14 + (idx % 3) * 84;
+			int ay = y + 4 + (idx / 3) * 56;
+			UiKit.card(ctx, ax, ay, 78, 50, UiKit.COL_PANEL);
+			ctx.drawItem(app.icon(), ax + 8, ay + 17);
+			UiKit.label(ctx, textRenderer, ax + 28, ay + 13, app.name(), UiKit.COL_TEXT);
 			String sub = switch (app.tab()) {
-				case SHOP -> i(data, "signal") >= 1 ? "купи-продай" : "нужен 2G";
+				case SHOP -> i(data, "signal") >= 1 ? "витрина" : "нужен 2G";
+				case MARKET -> i(data, "signal") >= 1 ? "лотов: " + i(sub(data, "market"), "total") : "нужен 2G";
 				case STOCKS -> i(data, "signal") >= 2 ? "5 компаний" : "нужен 3G";
-				case GPS -> i(data, "gpsOk") == 1 ? "онлайн" : "нет сигнала";
+				case GPS -> i(data, "gpsOk") == 1 ? "онлайн" : "офлайн";
 				case BANK -> lng(data, "balance") + " CR";
 				default -> "";
 			};
-			UiKit.label(ctx, textRenderer, ax + 34, ay + 27, sub,
+			UiKit.label(ctx, textRenderer, ax + 28, ay + 27, sub,
 					(app.tab() == Tab.GPS && i(data, "gpsOk") != 1)
 							|| (app.tab() == Tab.SHOP && i(data, "signal") < 1)
+							|| (app.tab() == Tab.MARKET && i(data, "signal") < 1)
 							|| (app.tab() == Tab.STOCKS && i(data, "signal") < 2)
 							? UiKit.COL_RED : UiKit.COL_TEXT_DIM);
-			clickable(ax, ay, 117, 50, () -> switchTab(app.tab()));
+			clickable(ax, ay, 78, 50, () -> switchTab(app.tab()));
 			idx++;
 		}
 		// карточка сети
@@ -267,6 +272,60 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.button(ctx, textRenderer, x + 88, py2, 18, 13, ">", mx, my, page + 1 < pages);
 		clickable(x + 88, py2, 18, 13, () -> sendQuery(query, page + 1));
 		UiKit.label(ctx, textRenderer, x + PW - 120, py2 + 3, "доставка в ПВЗ", UiKit.COL_TEXT_DIM);
+	}
+
+	// ------------------------------ Барахолка ------------------------------
+
+	private void renderMarket(DrawContext ctx, int x, int y, int mx, int my) {
+		if (i(data, "signal") < 1) {
+			lockOverlay(ctx, x, y, "Нужен хотя бы 2G для барахолки");
+			return;
+		}
+		NbtCompound market = sub(data, "market");
+		var entries = rows(market, "entries");
+		UiKit.label(ctx, textRenderer, x + 10, y + 6,
+				"лотов: " + i(market, "total") + " · комиссия 5% у продавца", UiKit.COL_TEXT_DIM);
+		if (entries.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 10, y + 40, "Пока пусто. Продавай своё из ПВЗ —", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, y + 52, "кнопка ₽ рядом с предметом.", UiKit.COL_TEXT_DIM);
+		}
+		int listY = y + 22;
+		int visible = Math.min(entries.size(), 6);
+		for (int idx = 0; idx < visible; idx++) {
+			NbtCompound e = entries.get(idx);
+			int ry = listY + idx * 19;
+			UiKit.card(ctx, x + 8, ry, PW - 16, 17, UiKit.COL_PANEL);
+			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "itemId")));
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry);
+			UiKit.label(ctx, textRenderer, x + 32, ry + 1, trim(str(e, "name"), 18) + " ×" + i(e, "count"),
+					UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 32, ry + 9,
+					"от " + trim(str(e, "seller"), 12) + " · " + i(e, "price") + " CR/шт", UiKit.COL_TEXT_DIM);
+			long total = (long) i(e, "price") * i(e, "count");
+			UiKit.button(ctx, textRenderer, x + PW - 64, ry + 2, 56, 13, total + " CR", mx, my,
+					lng(data, "balance") >= total);
+			final long lid = lng(e, "lid");
+			clickable(x + PW - 64, ry + 2, 56, 13, () -> {
+				NbtCompound a = new NbtCompound();
+				a.putLong("lid", lid);
+				send("market_buy", a);
+			});
+		}
+		int page = i(market, "page");
+		int pages = i(market, "pages");
+		int py2 = y + 142;
+		UiKit.button(ctx, textRenderer, x + 8, py2, 18, 13, "<", mx, my, page > 0);
+		clickable(x + 8, py2, 18, 13, () -> marketQuery(Math.max(0, page - 1)));
+		UiKit.label(ctx, textRenderer, x + 32, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, x + 88, py2, 18, 13, ">", mx, my, page + 1 < pages);
+		clickable(x + 88, py2, 18, 13, () -> marketQuery(page + 1));
+		UiKit.label(ctx, textRenderer, x + PW - 130, py2 + 3, "листится из ПВЗ (кнопка ₽)", UiKit.COL_TEXT_DIM);
+	}
+
+	private void marketQuery(int page) {
+		NbtCompound a = new NbtCompound();
+		a.putInt("page", page);
+		send("market_query", a);
 	}
 
 	private void sendQuery(String q, int page) {

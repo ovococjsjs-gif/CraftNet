@@ -23,9 +23,20 @@ public class PvzScreen extends CraftNetScreen {
 
 	private int claimsPage;
 	private int sellPage;
+	private UiKit.TextInput priceInput;
 
 	public PvzScreen(NbtCompound data) {
 		super("pvz", Text.translatable("craftnet.pvz.title"), data);
+	}
+
+	@Override
+	protected void init() {
+		super.init();
+		inputs.clear();
+		priceInput = new UiKit.TextInput(px() + PW / 2 + 2 + (PW / 2 - 12) - 60, py() + COLS_TOP + 3,
+				54, "цена/шт", true);
+		priceInput.maxLen = 7;
+		inputs.add(priceInput);
 	}
 
 	private int px() {
@@ -146,15 +157,21 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.card(ctx, x + 4, ry, w - 8, ROW_STEP - 5, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(c, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 8, ry + 3);
-			UiKit.label(ctx, textRenderer, x + 28, ry + 2, trim(str(c, "name"), 12) + " ×" + i(c, "count"),
+			UiKit.label(ctx, textRenderer, x + 28, ry + 2, trim(str(c, "name"), 8) + " ×" + i(c, "count"),
 					UiKit.COL_TEXT);
 			UiKit.label(ctx, textRenderer, x + 28, ry + 12, i(c, "price") + " CR/шт", UiKit.COL_YELLOW);
 			final String fid = str(c, "id");
 			final int have = i(c, "count");
-			UiKit.button(ctx, textRenderer, x + w - 74, ry + 5, 32, 13, "1 шт", mx, my, have >= 1);
-			clickable(x + w - 74, ry + 5, 32, 13, () -> sellAction(fid, 1));
-			UiKit.button(ctx, textRenderer, x + w - 38, ry + 5, 32, 13, "всё", mx, my, have >= 1);
-			clickable(x + w - 38, ry + 5, 32, 13, () -> sellAction(fid, have));
+			UiKit.button(ctx, textRenderer, x + w - 64, ry + 5, 30, 13, "всё", mx, my, have >= 1);
+			clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(fid, have));
+			UiKit.button(ctx, textRenderer, x + w - 30, ry + 5, 18, 13, "₽", mx, my,
+					have >= 1 && price() > 0);
+			clickable(x + w - 30, ry + 5, 18, 13, () -> {
+				NbtCompound a = new NbtCompound();
+				a.putString("id", fid);
+				a.putInt("price", price());
+				send("market_list", a);
+			});
 			ry += ROW_STEP - 3; // sell: шаг 25
 		}
 		int pages = pagesOf(sell.size());
@@ -166,6 +183,21 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.button(ctx, textRenderer, x + 44, y + COLS_H - 13, 12, 11, ">", mx, my,
 					sellPage + 1 < pages);
 			clickable(x + 44, y + COLS_H - 13, 12, 11, () -> sellPage++);
+		}
+		int lots = i(data, "myLots");
+		if (lots > 0) {
+			UiKit.button(ctx, textRenderer, x + w - 64, y + COLS_H - 13, 60, 11,
+					"лоты: " + lots + " ✕", mx, my, true);
+			clickable(x + w - 64, y + COLS_H - 13, 60, 11, () -> send("market_cancel", new NbtCompound()));
+		}
+	}
+
+	private int price() {
+		try {
+			return priceInput == null || priceInput.value.isBlank() ? 0
+					: Integer.parseInt(priceInput.value.trim());
+		} catch (NumberFormatException e) {
+			return 0;
 		}
 	}
 
