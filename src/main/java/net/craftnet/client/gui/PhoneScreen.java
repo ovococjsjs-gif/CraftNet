@@ -538,9 +538,10 @@ public class PhoneScreen extends CraftNetScreen {
 			animEndPlayed = true;
 			net.minecraft.client.MinecraftClient mc2 = mc();
 			if (mc2 != null && mc2.getSoundManager() != null) {
-				mc2.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(
-						animWin ? net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP
-								: net.minecraft.sound.SoundEvents.ENTITY_ITEM_BREAK, 1.0F));
+				net.minecraft.sound.SoundEvent ev = animWin
+						? net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP
+						: net.minecraft.sound.SoundEvents.ENTITY_ITEM_BREAK.value();
+				mc2.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(ev, 1.0F));
 			}
 		}
 	}

@@ -190,7 +190,7 @@ public final class CasinoManager {
 			}
 		} else {
 			player.sendMessage(Text.translatable("craftnet.casino.lose", stake, pct), false);
-			player.playSound(SoundEvents.ENTITY_ITEM_BREAK, 0.8f, 0.9f);
+			player.playSound(SoundEvents.ENTITY_ITEM_BREAK.value(), 0.8f, 0.9f);
 		}
 
 		// запись последнего спина (для рулетки на клиенте)
