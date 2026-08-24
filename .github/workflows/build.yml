@@ -4,11 +4,14 @@ on:
   push:
   workflow_dispatch:
 
+# contents: write нужен GITHUB_TOKEN, чтобы оставлять комментарий к коммиту
+# с хвостом лога сборки (так лог читаем через api.github.com).
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +25,10 @@ jobs:
           gradle-version: "8.14.3"
 
       - name: Build CraftNet
-        run: gradle build --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee build-output.log
 
       - name: Upload jar
         if: success()
@@ -31,3 +37,26 @@ jobs:
           name: craftnet-jar
           path: build/libs/*.jar
           retention-days: 30
+
+      - name: Report build log
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          {
+            printf '### CraftNet CI: **%s**\n\n`%s`\n\n```\n' \
+              "${{ job.status }}" "${{ github.sha }}"
+            tail -n 180 build-output.log
+            printf '\n```\n'
+          } > report.md
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+            -F body=@report.md >/dev/null || true
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log
+          retention-days: 14
