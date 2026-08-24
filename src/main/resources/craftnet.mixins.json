@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "net.craftnet.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"StructurePoolAccessor"
+	],
+	"client": [
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

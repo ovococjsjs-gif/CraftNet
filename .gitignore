@@ -1,0 +1,37 @@
+# gradle
+.gradle/
+build/
+out/
+classes/
+
+# eclipse
+*.launch
+
+# idea
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+.settings/
+.vscode/
+bin/
+.classpath
+.project
+
+# macos
+*.DS_Store
+
+# fabric
+run/
+run-server/
+
+# java errors / logs
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# gradle wrapper jar is intentionally not committed (sandbox has no network);
+# regenerate with `gradle wrapper` or let your IDE download the distribution.
+gradle/wrapper/gradle-wrapper.jar

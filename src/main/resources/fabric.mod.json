@@ -1,0 +1,31 @@
+{
+	"schemaVersion": 1,
+	"id": "craftnet",
+	"version": "${version}",
+	"name": "CraftNet",
+	"description": "Смартфон в Minecraft: онлайн-магазин, банк, биржа, GPS, сотовая связь 2G/3G/4G, ПВЗ и вышки в деревнях, рабочие места.",
+	"authors": [
+		"CraftNet Team"
+	],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/craftnet/textures/item/phone.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"net.craftnet.CraftNet"
+		],
+		"client": [
+			"net.craftnet.CraftNetClient"
+		]
+	},
+	"mixins": [
+		"craftnet.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
