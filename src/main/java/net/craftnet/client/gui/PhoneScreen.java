@@ -20,7 +20,7 @@ import net.craftnet.client.GpsMapRenderer;
  */
 public class PhoneScreen extends CraftNetScreen {
 
-	private enum Tab {HOME, SHOP, MARKET, STOCKS, GPS, BANK}
+	private enum Tab {HOME, SHOP, MARKET, CASINO, STOCKS, GPS, BANK}
 
 	private static final int PW = 272;
 	private static final int PH = 224;
@@ -30,6 +30,22 @@ public class PhoneScreen extends CraftNetScreen {
 	private String query = "";
 	private GpsMapRenderer map;
 	private UiKit.TextInput searchInput;
+	private UiKit.TextInput casinoSearchInput;
+	private String targetQuery = "";
+	// выбранная цель апгрейда
+	private String casinoTarget;
+	private int casinoTargetPrice;
+	private String casinoTargetName = "";
+	// рулетка
+	private long seenSpinId = -1;
+	private long animStartTick = -1;
+	private long animSeed;
+	private boolean animWin;
+	private int animBp;
+	private String animTargetId = "";
+	private String animTargetName = "";
+	private String animStakeIconId = "";
+	private boolean animEndPlayed;
 	private UiKit.TextInput payeeInput;
 	private UiKit.TextInput amountInput;
 
@@ -46,6 +62,11 @@ public class PhoneScreen extends CraftNetScreen {
 			searchInput = new UiKit.TextInput(px() + 8, py() + 37, PW - 100, "поиск предмета…", false);
 			searchInput.value = query;
 			inputs.add(searchInput);
+		} else if (tab == Tab.CASINO) {
+			casinoSearchInput = new UiKit.TextInput(px() + 136, py() + 73, 128, "цель…", false);
+			casinoSearchInput.value = targetQuery;
+			casinoSearchInput.maxLen = 20;
+			inputs.add(casinoSearchInput);
 		} else if (tab == Tab.BANK) {
 			payeeInput = new UiKit.TextInput(px() + 16, py() + 94, 96, "имя игрока", false);
 			payeeInput.maxLen = 16;
@@ -97,31 +118,36 @@ public class PhoneScreen extends CraftNetScreen {
 
 		renderStatusBar(ctx, x, y, mx, my);
 
-		// панель вкладок
-		int ty = y + 18;
-		drawTabButton(ctx, x + 8, ty, "Дом", 30, Tab.HOME, mx, my);
-		drawTabButton(ctx, x + 42, ty, "Магазин", 44, Tab.SHOP, mx, my);
-		drawTabButton(ctx, x + 90, ty, "Барахолка", 58, Tab.MARKET, mx, my);
-		drawTabButton(ctx, x + 152, ty, "Биржа", 44, Tab.STOCKS, mx, my);
-		drawTabButton(ctx, x + 200, ty, "GPS", 28, Tab.GPS, mx, my);
-		drawTabButton(ctx, x + 232, ty, "Банк", 36, Tab.BANK, mx, my);
+		// панель вкладок — иконки приложений
+		int ty = y + 16;
+		drawTabIcon(ctx, x + 8, ty, Items.COMPASS, Tab.HOME, mx, my);
+		drawTabIcon(ctx, x + 44, ty, Items.EMERALD, Tab.SHOP, mx, my);
+		drawTabIcon(ctx, x + 80, ty, Items.CHEST, Tab.MARKET, mx, my);
+		drawTabIcon(ctx, x + 116, ty, Items.TARGET, Tab.CASINO, mx, my);
+		drawTabIcon(ctx, x + 152, ty, Items.PAPER, Tab.STOCKS, mx, my);
+		drawTabIcon(ctx, x + 188, ty, Items.FILLED_MAP, Tab.GPS, mx, my);
+		drawTabIcon(ctx, x + 224, ty, Items.GOLD_INGOT, Tab.BANK, mx, my);
+		ctx.drawHorizontalLine(x, x + PW - 1, y + 36, UiKit.COL_LINE);
 
-		int cy = y + 36;
+		int cy = y + 40;
 		switch (tab) {
 			case HOME -> renderHome(ctx, x, cy, mx, my);
 			case SHOP -> renderShop(ctx, x, cy, mx, my);
 			case MARKET -> renderMarket(ctx, x, cy, mx, my);
+			case CASINO -> renderCasino(ctx, x, cy, mx, my);
 			case STOCKS -> renderStocks(ctx, x, cy, mx, my);
 			case GPS -> renderGps(ctx, x, cy, mx, my);
 			case BANK -> renderBank(ctx, x, cy, mx, my);
 		}
 	}
 
-	private void drawTabButton(DrawContext ctx, int x, int y, String name, int w, Tab t, double mx, double my) {
+	private void drawTabIcon(DrawContext ctx, int x, int y, Item icon, Tab t, double mx, double my) {
 		boolean active = tab == t;
-		UiKit.button(ctx, textRenderer, x, y, w, 14, name, mx, my, true);
-		if (active) ctx.fill(x + 3, y + 13, x + w - 3, y + 15, UiKit.COL_ACCENT);
-		clickable(x, y, w, 15, () -> switchTab(t));
+		boolean hover = mx >= x && mx < x + 32 && my >= y && my < y + 18;
+		ctx.fill(x, y, x + 32, y + 18, active ? UiKit.COL_PANEL_HI : hover ? UiKit.COL_PANEL : UiKit.COL_BG);
+		ctx.drawItem(icon.getDefaultStack(), x + 8, y + 1);
+		if (active) ctx.fill(x + 3, y + 17, x + 29, y + 19, UiKit.COL_ACCENT);
+		clickable(x, y, 32, 19, () -> switchTab(t));
 	}
 
 	private void renderStatusBar(DrawContext ctx, int x, int y, double mx, double my) {
@@ -162,6 +188,11 @@ public class PhoneScreen extends CraftNetScreen {
 		ctx.drawHorizontalLine(x, x + PW - 1, y + 15, UiKit.COL_LINE);
 	}
 
+	private String luckSub() {
+		long v = lng(sub(data, "casino"), "stakeVal");
+		return v > 0 ? v + " CR на кону" : "испытай удачу";
+	}
+
 	private String signalLabel() {
 		return switch (i(data, "signal")) {
 			case 1 -> "2G";
@@ -182,6 +213,7 @@ public class PhoneScreen extends CraftNetScreen {
 				new App("Биржа", Items.PAPER.getDefaultStack(), Tab.STOCKS),
 				new App("GPS", Items.FILLED_MAP.getDefaultStack(), Tab.GPS),
 				new App("Банк", Items.GOLD_INGOT.getDefaultStack(), Tab.BANK),
+				new App("Апгрейд", Items.TARGET.getDefaultStack(), Tab.CASINO),
 		};
 		int idx = 0;
 		for (App app : apps) {
@@ -196,6 +228,7 @@ public class PhoneScreen extends CraftNetScreen {
 				case STOCKS -> i(data, "signal") >= 2 ? "5 компаний" : "нужен 3G";
 				case GPS -> i(data, "gpsOk") == 1 ? "онлайн" : "офлайн";
 				case BANK -> lng(data, "balance") + " CR";
+				case CASINO -> luckSub();
 				default -> "";
 			};
 			UiKit.label(ctx, textRenderer, ax + 28, ay + 27, sub,
@@ -274,6 +307,244 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + PW - 120, py2 + 3, "доставка в ПВЗ", UiKit.COL_TEXT_DIM);
 	}
 
+	// ------------------------------ Казино-апгрейд ------------------------------
+
+	private static final int STRIP_CELLS = 48;
+	private static final int STRIP_CELL = 26;
+	private static final int STRIP_LANDING = 32;
+	private static final int ANIM_DUR = 64; // тиков ≈ 3.2 сек
+
+	private void renderCasino(DrawContext ctx, int x, int y, int mx, int my) {
+		if (i(data, "signal") < 1) {
+			lockOverlay(ctx, x, y, "Нужен хотя бы 2G для апгрейда");
+			return;
+		}
+		NbtCompound cz = sub(data, "casino");
+		var staked = rows(cz, "staked");
+		long stakeVal = lng(cz, "stakeVal");
+		NbtCompound last = sub(cz, "last");
+		long lastId = lng(last, "id");
+
+		// детектор нового спина
+		if (lastId > 0) {
+			if (seenSpinId < 0) {
+				seenSpinId = lastId; // первичная синхронизация — без анимации
+			} else if (lastId > seenSpinId) {
+				seenSpinId = lastId;
+				animStartTick = mc() != null && mc().world != null ? mc().world.getTime() : 0;
+				animSeed = lastId;
+				animWin = i(last, "win") == 1;
+				animBp = i(last, "bp");
+				animTargetId = str(last, "target");
+				animTargetName = str(last, "tname");
+				animStakeIconId = str(last, "sicon");
+				animEndPlayed = false;
+			}
+		}
+
+		// --- пул ставки ---
+		UiKit.card(ctx, x + 8, y + 2, PW - 16, 22, UiKit.COL_PANEL_HI);
+		UiKit.label(ctx, textRenderer, x + 14, y + 7, "Ставка:", UiKit.COL_TEXT_DIM);
+		int ix = x + 54;
+		for (NbtCompound e : staked) {
+			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
+			if (item != null) ctx.drawItem(item.getDefaultStack(), ix, y + 3);
+			UiKit.label(ctx, textRenderer, ix + 3, y + 19 - 6, "", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, ix + 9, y + 3, "×" + i(e, "count"), UiKit.COL_TEXT_DIM);
+			ix += 30;
+		}
+		String sv = stakeVal + " CR";
+		ctx.drawText(textRenderer, Text.literal(sv), x + PW - 46 - textRenderer.getWidth(sv), y + 7,
+				UiKit.COL_YELLOW, false);
+		UiKit.button(ctx, textRenderer, x + PW - 36, y + 5, 24, 14, "✕", mx, my, !staked.isEmpty());
+		clickable(x + PW - 36, y + 5, 24, 14, () -> send("casino_clear", new NbtCompound()));
+
+		// --- инвентарь (источник ставок) ---
+		var src = rows(cz, "src");
+		UiKit.label(ctx, textRenderer, x + 8, y + 30,
+				"инвентарь:" + (src.size() > 4 ? " +" + (src.size() - 4) : ""), UiKit.COL_TEXT_DIM);
+		int ry = y + 40;
+		int shown = 0;
+		for (NbtCompound e : src) {
+			if (shown >= 4) break;
+			shown++;
+			UiKit.card(ctx, x + 8, ry, 120, 16, UiKit.COL_PANEL);
+			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 11, ry);
+			UiKit.label(ctx, textRenderer, x + 31, ry + 1, trim(str(e, "name"), 7) + " ×" + i(e, "count"),
+					UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 31, ry + 9, i(e, "price") + " CR/шт", UiKit.COL_TEXT_DIM);
+			final String fid = str(e, "id");
+			UiKit.button(ctx, textRenderer, x + 82, ry + 2, 20, 12, "+1", mx, my, true);
+			clickable(x + 82, ry + 2, 20, 12, () -> stakeAction(fid, 1));
+			UiKit.button(ctx, textRenderer, x + 105, ry + 2, 22, 12, "64", mx, my, true);
+			clickable(x + 105, ry + 2, 22, 12, () -> stakeAction(fid, 64));
+			ry += 18;
+		}
+
+		// --- цель (каталог) ---
+		UiKit.label(ctx, textRenderer, x + 136, y + 30, "цель (поиск + Enter):", UiKit.COL_TEXT_DIM);
+		NbtCompound targets = sub(cz, "targets");
+		var tents = rows(targets, "entries");
+		ry = y + 50;
+		int tShown = 0;
+		for (NbtCompound e : tents) {
+			if (tShown >= 3) break;
+			tShown++;
+			boolean sel = str(e, "id").equals(casinoTarget);
+			UiKit.card(ctx, x + 136, ry, 128, 16, sel ? 0xFF2A3A20 : UiKit.COL_PANEL);
+			if (sel) {
+				ctx.drawHorizontalLine(x + 136, x + 263, ry, UiKit.COL_YELLOW);
+				ctx.drawHorizontalLine(x + 136, x + 263, ry + 15, UiKit.COL_YELLOW);
+			}
+			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 139, ry);
+			UiKit.label(ctx, textRenderer, x + 159, ry + 1, trim(str(e, "name"), 13), UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 159, ry + 9, i(e, "buy") + " CR", UiKit.COL_YELLOW);
+			final String tid = str(e, "id");
+			final int tp = i(e, "buy");
+			final String tn = str(e, "name");
+			clickable(x + 136, ry, 128, 16, () -> {
+				casinoTarget = tid;
+				casinoTargetPrice = tp;
+				casinoTargetName = tn;
+			});
+			ry += 18;
+		}
+		// пейджер целей
+		int tpage = i(targets, "page");
+		int tpages = i(targets, "pages");
+		UiKit.button(ctx, textRenderer, x + 196, y + 104, 12, 11, "<", mx, my, tpage > 0);
+		clickable(x + 196, y + 104, 12, 11, () -> casinoQuery(targetQuery, Math.max(0, tpage - 1)));
+		UiKit.label(ctx, textRenderer, x + 212, y + 106, (tpage + 1) + "/" + tpages, UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, x + 250, y + 104, 12, 11, ">", mx, my, tpage + 1 < tpages);
+		clickable(x + 250, y + 104, 12, 11, () -> casinoQuery(targetQuery, tpage + 1));
+
+		// --- шанс + спин ---
+		long bp = 0;
+		if (stakeVal > 0 && casinoTargetPrice > 0) {
+			bp = Math.min(9500, stakeVal * 10000 / casinoTargetPrice);
+		}
+		String chanceTxt = casinoTarget == null ? "выбери цель →"
+				: "шанс: " + (bp < 100 ? "<1" : String.format(java.util.Locale.ROOT, "%.1f", bp / 100.0)) + "%";
+		int chCol = bp >= 5000 ? UiKit.COL_GREEN : bp >= 2000 ? UiKit.COL_YELLOW : UiKit.COL_RED;
+		UiKit.label(ctx, textRenderer, x + 12, y + 116, chanceTxt, chCol);
+		if (casinoTarget != null) {
+			UiKit.label(ctx, textRenderer, x + 12, y + 126,
+					"ставка " + stakeVal + " → приз " + trim(casinoTargetName, 12), UiKit.COL_TEXT_DIM);
+		}
+		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= 100;
+		UiKit.button(ctx, textRenderer, x + PW - 104, y + 112, 96, 18, "КРУТИТЬ!", mx, my, canSpin);
+		if (canSpin) {
+			clickable(x + PW - 104, y + 112, 96, 18, () -> {
+				NbtCompound a = new NbtCompound();
+				a.putString("target", casinoTarget);
+				send("casino_spin", a);
+			});
+		}
+
+		// --- рулетка ---
+		drawRoulette(ctx, x + 8, y + 136, PW - 16, 30, lastId, last);
+
+		// --- итог ---
+		boolean animActive = animStartTick >= 0 && mc() != null && mc().world != null
+				&& mc().world.getTime() - animStartTick < ANIM_DUR;
+		if (!animActive && lastId > 0) {
+			boolean win = i(last, "win") == 1;
+			String res = win
+					? "ВЫИГРЫШ: " + str(last, "tname")
+					: "проигрыш — ставка " + lng(last, "sv") + " CR сгорела";
+			ctx.drawCenteredTextWithShadow(textRenderer, Text.literal(res), x + PW / 2, y + 172,
+					win ? UiKit.COL_GREEN : UiKit.COL_RED);
+		}
+	}
+
+	private void stakeAction(String id, int count) {
+		NbtCompound a = new NbtCompound();
+		a.putString("id", id);
+		a.putInt("count", count);
+		send("casino_stake", a);
+	}
+
+	private void casinoQuery(String q, int page) {
+		NbtCompound a = new NbtCompound();
+		a.putString("q", q);
+		a.putInt("page", page);
+		send("casino_query", a);
+	}
+
+	/** Лента рулетки: детерминирована от id спина, остановка строго на решении сервера. */
+	private void drawRoulette(DrawContext ctx, int sx, int sy, int sw, int sh, long lastId, NbtCompound last) {
+		UiKit.card(ctx, sx, sy, sw, sh, UiKit.COL_TRACK);
+		long now = mc() != null && mc().world != null ? mc().world.getTime() : 0;
+		boolean animating = animStartTick >= 0 && now - animStartTick < ANIM_DUR;
+		if (!animating && lastId <= 0) {
+			ctx.drawCenteredTextWithShadow(textRenderer,
+					Text.literal("собери ставку, выбери цель — и лента покажет, кому улыбнётся удача"),
+					sx + sw / 2, sy + sh / 2 - 4, UiKit.COL_TEXT_DIM);
+			return;
+		}
+		long seed = animating ? animSeed : lastId;
+		boolean win = animating ? animWin : i(last, "win") == 1;
+		int bp = animating ? animBp : i(last, "bp");
+		String tid = animating ? animTargetId : str(last, "target");
+		String stakeIcon = animating ? animStakeIconId : str(last, "sicon");
+		if (stakeIcon.isEmpty()) stakeIcon = "minecraft:barrier";
+
+		// сетка ячеек по seed
+		java.util.Random rnd = new java.util.Random(seed);
+		int greenCount = Math.max(1, Math.min(STRIP_CELLS - 2, (int) Math.round(bp / 10000.0 * (STRIP_CELLS - 2))));
+		boolean[] green = new boolean[STRIP_CELLS];
+		int placed = 0;
+		while (placed < greenCount) {
+			int idx = rnd.nextInt(STRIP_CELLS);
+			if (idx == STRIP_LANDING || green[idx]) continue;
+			green[idx] = true;
+			placed++;
+		}
+		int jitter = rnd.nextInt(STRIP_CELL - 8) - (STRIP_CELL - 8) / 2;
+
+		// прокрутка
+		int totalScroll = STRIP_LANDING * STRIP_CELL + STRIP_CELL / 2 - sw / 2 + jitter;
+		int scroll = totalScroll;
+		if (animating) {
+			double t = Math.min(1.0, (now - animStartTick) / (double) ANIM_DUR);
+			double ease = 1.0 - Math.pow(1.0 - t, 5);
+			scroll = (int) (totalScroll * ease);
+		} else if (animStartTick >= 0 && now - animStartTick >= ANIM_DUR) {
+			scroll = totalScroll; // приземлились
+		}
+
+		Item targetItem = Registries.ITEM.get(Identifier.tryParse(tid));
+		Item loseItem = Registries.ITEM.get(Identifier.tryParse(stakeIcon));
+		ctx.enableScissor(sx + 1, sy + 1, sx + sw - 1, sy + sh - 1);
+		for (int ci = 0; ci < STRIP_CELLS; ci++) {
+			int cx = sx + ci * STRIP_CELL - scroll;
+			if (cx + STRIP_CELL < sx || cx > sx + sw) continue;
+			boolean isLanding = ci == STRIP_LANDING;
+			int bg = isLanding ? 0xFF6B5416 : green[ci] ? UiKit.COL_GREEN_DIM : 0xFF3B1518;
+			ctx.fill(cx + 1, sy + 4, cx + STRIP_CELL - 1, sy + sh - 4, bg);
+			Item icon = (isLanding ? win : green[ci]) ? targetItem : loseItem;
+			if (icon != null) ctx.drawItem(icon.getDefaultStack(), cx + (STRIP_CELL - 16) / 2, sy + 7);
+		}
+		ctx.disableScissor();
+		// указатель
+		int pc = sx + sw / 2;
+		ctx.fill(pc, sy, pc + 1, sy + sh, 0xFFFFD75E);
+		ctx.fill(pc - 3, sy, pc + 4, sy + 2, 0xFFFFD75E);
+
+		// звук остановки
+		if (animStartTick >= 0 && now - animStartTick >= ANIM_DUR && !animEndPlayed) {
+			animEndPlayed = true;
+			net.minecraft.client.MinecraftClient mc2 = mc();
+			if (mc2 != null && mc2.getSoundManager() != null) {
+				mc2.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(
+						animWin ? net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP
+								: net.minecraft.sound.SoundEvents.ENTITY_ITEM_BREAK, 1.0F));
+			}
+		}
+	}
+
 	// ------------------------------ Барахолка ------------------------------
 
 	private void renderMarket(DrawContext ctx, int x, int y, int mx, int my) {
@@ -343,6 +614,13 @@ public class PhoneScreen extends CraftNetScreen {
 			query = searchInput.value;
 			searchInput.focused = false;
 			sendQuery(query, 0);
+			return true;
+		}
+		if (tab == Tab.CASINO && casinoSearchInput != null && casinoSearchInput.focused
+				&& (keyCode == 257 || keyCode == 335)) {
+			targetQuery = casinoSearchInput.value;
+			casinoSearchInput.focused = false;
+			casinoQuery(targetQuery, 0);
 			return true;
 		}
 		if (tab == Tab.BANK && amountInput != null && amountInput.focused

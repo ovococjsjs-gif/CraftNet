@@ -21,6 +21,7 @@ import net.minecraft.util.math.BlockPos;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import org.jetbrains.annotations.Nullable;
 
+import net.craftnet.econ.CasinoManager;
 import net.craftnet.econ.MarketManager;
 import net.craftnet.econ.MoneyManager;
 import net.craftnet.econ.PriceManager;
@@ -38,7 +39,8 @@ import net.craftnet.village.VillageManager;
 public final class ServerActions {
 	private ServerActions() {}
 
-	private record OpenCtx(String screen, long station, String shopQ, int shopPage, int marketPage) {}
+	private record OpenCtx(String screen, long station, String shopQ, int shopPage, int marketPage,
+			String casinoQ, int casinoPage) {}
 
 	private static final Map<UUID, OpenCtx> OPEN = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -47,7 +49,7 @@ public final class ServerActions {
 	// ============================== открытие / синхронизация ==============================
 
 	public static void openScreen(ServerPlayerEntity player, String screen, @Nullable BlockPos station) {
-		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0, 0));
+		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0, 0, "", 0));
 		ServerPlayNetworking.send(player, new ModPackets.OpenScreenS2CPayload(screen, buildSync(player, screen)));
 	}
 
@@ -134,17 +136,46 @@ public final class ServerActions {
 			case "query_shop" -> {
 				if (ctx != null) {
 					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(),
-							args.getString("q", ""), Math.max(0, args.getInt("page", 0)), ctx.marketPage()));
+							args.getString("q", ""), Math.max(0, args.getInt("page", 0)), ctx.marketPage(), ctx.casinoQ(), ctx.casinoPage()));
 				}
 			}
 			case "buy" -> phoneBuy(player, args);
 			case "market_query" -> {
 				if (ctx != null) {
 					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
-							ctx.shopPage(), Math.max(0, args.getInt("page", 0))));
+							ctx.shopPage(), Math.max(0, args.getInt("page", 0)), ctx.casinoQ(), ctx.casinoPage()));
 				}
 			}
 			case "market_buy" -> marketBuy(player, args);
+			case "casino_query" -> {
+				if (ctx != null) {
+					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
+							ctx.shopPage(), ctx.marketPage(),
+							args.getString("q", ""), Math.max(0, args.getInt("page", 0))));
+				}
+			}
+			case "casino_stake" -> {
+				int rc2 = CasinoManager.addStake(server, player, args.getString("id", ""),
+						args.getInt("count", 1));
+				switch (rc2) {
+					case 2 -> player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
+					case 3 -> player.sendMessage(Text.translatable("craftnet.casino.full"), true);
+					default -> { }
+				}
+			}
+			case "casino_clear" -> CasinoManager.clearPool(server, player);
+			case "casino_spin" -> {
+				int rc = CasinoManager.spin(server, player, args.getString("target", ""));
+				switch (rc) {
+					case CasinoManager.SPIN_EMPTY -> player.sendMessage(
+							Text.translatable("craftnet.casino.no_stake"), true);
+					case CasinoManager.SPIN_BAD_TARGET -> player.sendMessage(
+							Text.translatable("craftnet.casino.bad_target"), true);
+					case CasinoManager.SPIN_LOW -> player.sendMessage(
+							Text.translatable("craftnet.casino.low_chance"), true);
+					default -> { }
+				}
+			}
 			case "stock_buy" -> stockOp(player, args, true);
 			case "stock_sell" -> stockOp(player, args, false);
 			case "transfer" -> {
@@ -497,6 +528,9 @@ public final class ServerActions {
 		int page = ctx == null ? 0 : ctx.shopPage();
 		d.put("shop", buildShopPage(q, page));
 		d.put("market", buildMarketPage(server, ctx == null ? 0 : ctx.marketPage()));
+		// казино-апгрейдер: пул ставки, источник из инвентаря, каталог целей, последний спин
+		d.put("casino", buildCasinoSync(player, server,
+				ctx == null ? "" : ctx.casinoQ(), ctx == null ? 0 : ctx.casinoPage()));
 	}
 
 	private record ShopEntry(String id, String name, int buy, int sell, int max) {}
@@ -560,6 +594,47 @@ public final class ServerActions {
 		}
 		shop.put("entries", entries);
 		return shop;
+	}
+
+	private static NbtCompound buildCasinoSync(ServerPlayerEntity player, MinecraftServer server,
+			String casinoQ, int casinoPage) {
+		NbtCompound cz = new NbtCompound();
+		NbtList staked = new NbtList();
+		for (NbtCompound row : CasinoManager.poolRows(server, player.getUuid())) staked.add(row);
+		cz.put("staked", staked);
+		cz.putLong("stakeVal", CasinoManager.poolValue(server, player.getUuid()));
+		// источник ставок: агрегированный инвентарь (только то, что можно оценить), до 12 видов
+		Map<String, int[]> agg = new java.util.LinkedHashMap<>();
+		Map<String, String> names = new java.util.HashMap<>();
+		var inv = player.getInventory();
+		for (int i = 0; i < inv.size(); i++) {
+			ItemStack s2 = inv.getStack(i);
+			if (s2.isEmpty()) continue;
+			String id = Registries.ITEM.getId(s2.getItem()).toString();
+			if (!PriceManager.tradeable(id)) continue;
+			int price = PriceManager.sellPrice(id);
+			if (price <= 0) continue;
+			agg.computeIfAbsent(id, k -> new int[2]);
+			agg.get(id)[0] += s2.getCount();
+			agg.get(id)[1] = price;
+			names.putIfAbsent(id, s2.getName().getString());
+		}
+		NbtList src = new NbtList();
+		int rows = 0;
+		for (Map.Entry<String, int[]> e : agg.entrySet()) {
+			if (rows++ >= 12) break;
+			NbtCompound c = new NbtCompound();
+			c.putString("id", e.getKey());
+			c.putString("name", names.get(e.getKey()));
+			c.putInt("count", e.getValue()[0]);
+			c.putInt("price", e.getValue()[1]);
+			src.add(c);
+		}
+		cz.put("src", src);
+		cz.put("targets", buildShopPage(casinoQ, casinoPage));
+		NbtCompound last = CasinoManager.lastSpinView(server, player.getUuid());
+		if (!last.isEmpty()) cz.put("last", last);
+		return cz;
 	}
 
 	private static final int MARKET_PAGE_SIZE = 6;
