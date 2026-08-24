@@ -8,6 +8,8 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 
 import net.craftnet.state.MoneyState;
 import net.craftnet.util.Nbt2;
@@ -20,6 +22,11 @@ public final class MoneyManager {
 	private MoneyManager() {}
 
 	private static final int TX_LOG_MAX = 16;
+
+	/** Дневной банковский процент на остаток (доля), потолок и минимальный баланс. */
+	public static final double DAILY_INTEREST = 0.0015;
+	public static final long INTEREST_CAP = 25;
+	public static final long INTEREST_MIN_BAL = 50;
 
 	public static MoneyState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(MoneyState.TYPE);
@@ -94,6 +101,39 @@ public final class MoneyManager {
 		if (Nbt2.lng(rec, "bal") == 0) rec.putLong("bal", 100);
 		saveRec(st, id, rec);
 		return true;
+	}
+
+	/**
+	 * Раз в игровые сутки начисляет процент на остаток всем игрокам
+	 * (включая офлайн). При первом запуске только фиксирует день.
+	 */
+	public static void maybePayDailyInterest(MinecraftServer server) {
+		long day = server.getOverworld().getTimeOfDay() / 24000L;
+		MoneyState st = state(server);
+		NbtCompound meta = Nbt2.sub(st.data(), "meta");
+		boolean first = !meta.contains("lastIntDay");
+		if (!first && meta.getLong("lastIntDay", -1L) >= day) return;
+		meta.putLong("lastIntDay", day);
+		st.data().put("meta", meta);
+		st.markDirty();
+		if (first) return;
+		for (String key : players(st.data()).getKeys()) {
+			UUID id;
+			try {
+				id = UUID.fromString(key);
+			} catch (IllegalArgumentException ex) {
+				continue;
+			}
+			long bal = balance(server, id);
+			if (bal < INTEREST_MIN_BAL) continue;
+			long interest = Math.min(INTEREST_CAP, Math.round(bal * DAILY_INTEREST));
+			if (interest <= 0) continue;
+			add(server, id, interest, "процент банка");
+			ServerPlayerEntity pl = server.getPlayerManager().getPlayer(id);
+			if (pl != null) {
+				pl.sendMessage(Text.translatable("craftnet.bank.interest", interest), false);
+			}
+		}
 	}
 
 	public static boolean transfer(MinecraftServer server, UUID from, UUID to, long amount) {

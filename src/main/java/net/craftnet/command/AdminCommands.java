@@ -40,6 +40,16 @@ public final class AdminCommands {
 					return 1;
 				}))
 
+				// /craftnet tutorial — краткий гайд по моду, доступен всем
+				.then(CommandManager.literal("tutorial").executes(ctx -> {
+					ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
+					for (int i = 1; i <= 8; i++) {
+						final String key = "craftnet.tutorial." + i;
+						p.sendMessage(Text.translatable(key).formatted(net.minecraft.util.Formatting.GRAY), false);
+					}
+					return 1;
+				}))
+
 				.then(CommandManager.literal("money").requires(s -> s.getPermissions().hasPermission(OP))
 						.then(CommandManager.literal("add")
 								.then(CommandManager.argument("player", EntityArgumentType.player())

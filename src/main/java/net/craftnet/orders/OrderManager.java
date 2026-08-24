@@ -106,8 +106,28 @@ public final class OrderManager {
 			final int idx = i;
 			NbtElement el = list.get(idx);
 			if (!(el instanceof NbtCompound o)) continue;
-			if (o.getInt("kind", 0) != KIND_PAYOUT) continue;
 			if (o.getLong("ready", Long.MAX_VALUE) > now) continue;
+			if (o.getInt("kind", 0) == KIND_DELIVERY) {
+				// доставка созрела: одноразовое уведомление игроку в чат
+				if (o.getBoolean("ntf", false)) continue;
+				o.putBoolean("ntf", true);
+				st.markDirty();
+				try {
+					UUID owner = UUID.fromString(o.getString("owner", ""));
+					ServerPlayerEntity pl = server.getPlayerManager().getPlayer(owner);
+					if (pl != null) {
+						ItemStack got = decodeStack(server,
+								o.getCompound("item").orElseGet(NbtCompound::new));
+						pl.sendMessage(Text.translatable("craftnet.order.arrived",
+								got.isEmpty() ? Text.literal("?") : got.getName(),
+								o.getString("vname", "")), false);
+						pl.playSound(net.minecraft.sound.SoundEvents.ENTITY_VILLAGER_YES, 0.7f, 1.1f);
+					}
+				} catch (IllegalArgumentException ignored) {
+				}
+				continue;
+			}
+			if (o.getInt("kind", 0) != KIND_PAYOUT) continue;
 			String ownerStr = o.getString("owner", "");
 			try {
 				UUID owner = UUID.fromString(ownerStr);
