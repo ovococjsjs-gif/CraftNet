@@ -476,6 +476,7 @@ public final class JobManager {
 			long fee = Math.round(Nbt2.lng(data, "pay") * feeRate);
 			long matLoss = 0;
 
+			ServerPlayerEntity pl = server.getPlayerManager().getPlayer(player);
 			if (isCraftOrder(type)) {
 				// конфискуем помеченные материалы; недостачу оцениваем в деньги
 				String tag = tagOf(player, type);
@@ -484,18 +485,20 @@ public final class JobManager {
 					Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(m, "id")));
 					if (item == null) continue;
 					int given = Nbt2.i(m, "count");
-					int found = countTagged(player, item, tag);
-					removeTagged(player, item, tag, Integer.MAX_VALUE);
+					int found = pl == null ? 0 : countTagged(pl, item, tag);
+					if (pl != null) removeTagged(pl, item, tag, Integer.MAX_VALUE);
 					int lost = Math.max(0, given - found);
 					matLoss += (long) PriceManager.sellPrice(Nbt2.str(m, "id")) * lost;
 				}
 			} else if (T_LOADER.equals(type)) {
-				String tag = tagOf(player, type);
-				removeTagged(player, ModBlocks.CARGO_CRATE.asItem(), tag, Integer.MAX_VALUE);
+				if (pl != null) {
+					String tag = tagOf(player, type);
+					removeTagged(pl, ModBlocks.CARGO_CRATE.asItem(), tag, Integer.MAX_VALUE);
+				}
 				matLoss = 80; // потерянный ящик цеха
-			} else if (T_COURIER.equals(type)) {
+			} else if (T_COURIER.equals(type) && pl != null) {
 				String tag = tagOf(player, type);
-				removeTagged(player, ModItems.FOOD_BOX, tag, Integer.MAX_VALUE);
+				removeTagged(pl, ModItems.FOOD_BOX, tag, Integer.MAX_VALUE);
 			}
 
 			long total = fee + matLoss;
