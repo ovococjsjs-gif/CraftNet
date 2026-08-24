@@ -55,7 +55,7 @@
   "craftnet.tutorial.6": "§fStocks: §7shares of 5 companies rise and fall; daily dividends — watch the news feed.",
   "craftnet.tutorial.7": "§fJobs: §7factory, loader, cook and courier await in villages — paid shifts and assembly minigames.",
   "craftnet.tutorial.8": "§fPickup point/bank/factory/cafe: §7spawn in new villages; a cell tower is built nearby.",
-  "craftnet.welcome_phone": "You've been issued a CraftNet smartphone (+100 CR). Press P to open the phone.",
+  "craftnet.welcome_phone": "You've been issued a CraftNet smartphone (+100 CR). Press P for the phone, /craftnet tutorial for a guide.",
   "item.craftnet.banknote": "Banknote",
   "item.craftnet.banknote.tip": "Value: %s CR. Redeem at a bank terminal.",
   "item.craftnet.banknote.v": "Banknote %s CR",

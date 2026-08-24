@@ -55,7 +55,7 @@
   "craftnet.tutorial.6": "§fБиржа: §7акции 5 компаний растут и падают; дивиденды каждые сутки — следи за новостями.",
   "craftnet.tutorial.7": "§fРаботы: §7завод, грузчик, повар и курьер ждут в деревнях — оплата за смены и сборку по схеме.",
   "craftnet.tutorial.8": "§fПВЗ/банк/завод/кафе: §7появляются в новых деревнях; вышка связи строится рядом.",
-  "craftnet.welcome_phone": "Вам выдан смартфон CraftNet (+100 CR на счёт). Клавиша P открывает телефон.",
+  "craftnet.welcome_phone": "Вам выдан смартфон CraftNet (+100 CR). Клавиша P — телефон, /craftnet tutorial — гайд.",
   "item.craftnet.banknote": "Банкнота",
   "item.craftnet.banknote.tip": "Номинал: %s CR. Обменивается в банкомате.",
   "item.craftnet.banknote.v": "Банкнота %s CR",
