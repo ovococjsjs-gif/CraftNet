@@ -28,8 +28,8 @@ public final class UiKit {
 	public static void clickSound() {
 		net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
 		if (mc != null && mc.getSoundManager() != null) {
-			mc.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.master(
-					net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK.value(), 1.0F));
+			mc.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(
+					net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK, 1.0F));
 		}
 	}
 
