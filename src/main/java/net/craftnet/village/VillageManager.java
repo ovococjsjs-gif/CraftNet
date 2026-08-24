@@ -28,9 +28,10 @@ import net.craftnet.util.Nbt2;
 public final class VillageManager {
 	private VillageManager() {}
 
-	public static final int R4G = 60;
-	public static final int R3G = 160;
-	public static final int R2G = 320;
+	// Покрытие вышки (после апгрейда сети — диапазоны ×2 от первых версий мода)
+	public static final int R4G = 120;
+	public static final int R3G = 320;
+	public static final int R2G = 640;
 
 	/** Радиус поиска деревень (в чанках, по уже сгенерированным — быстро). */
 	private static final int LOCATE_RADIUS = 64;
