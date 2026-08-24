@@ -54,6 +54,7 @@ public abstract class CraftNetScreen extends Screen {
 		for (int i = regions.size() - 1; i >= 0; i--) {
 			Region r = regions.get(i);
 			if (mouseX >= r.x() && mouseX < r.x() + r.w() && mouseY >= r.y() && mouseY < r.y() + r.h()) {
+				UiKit.clickSound();
 				r.onClick().run();
 				return true;
 			}

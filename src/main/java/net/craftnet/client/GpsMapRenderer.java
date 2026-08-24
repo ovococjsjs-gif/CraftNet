@@ -49,8 +49,8 @@ public final class GpsMapRenderer {
 		long tick = world.getTime();
 		int cx = player.getBlockPos().getX();
 		int cz = player.getBlockPos().getZ();
-		boolean moved = Math.abs(cx - lastCX) > 8 || Math.abs(cz - lastCZ) > 8;
-		if (!moved && tick - lastTick < 15) return;
+		boolean moved = Math.abs(cx - lastCX) > 3 || Math.abs(cz - lastCZ) > 3;
+		if (!moved && tick - lastTick < 20) return;
 		lastTick = tick;
 		lastCX = cx;
 		lastCZ = cz;

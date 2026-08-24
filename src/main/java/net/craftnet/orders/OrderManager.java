@@ -68,6 +68,7 @@ public final class OrderManager {
 		o.putInt("vz", villageZ);
 		o.putString("vname", villageName);
 		o.putLong("ready", readyTick);
+		o.putLong("start", server.getOverworld().getTime());
 		NbtList list = st.data().getListOrEmpty("orders");
 		list = (NbtList) list.copy();
 		list.add(o);
@@ -173,6 +174,10 @@ public final class OrderManager {
 			long ready = o.getLong("ready", 0L);
 			view.putInt("readyNow", ready <= now ? 1 : 0);
 			view.putLong("etaSec", Math.max(0, (ready - now) / 20));
+			long start = o.getLong("start", 0L);
+			int frac = start <= 0 || ready <= start ? (ready <= now ? 100 : 0)
+					: (int) Math.max(0, Math.min(100, (now - start) * 100 / (ready - start)));
+			view.putInt("frac", frac);
 			out.add(view);
 		}
 		return out;

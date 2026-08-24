@@ -21,6 +21,34 @@ public final class UiKit {
 	public static final int COL_TEXT = 0xFFE6EDF3;
 	public static final int COL_TEXT_DIM = 0xFF8B949E;
 	public static final int COL_LINE = 0xFF3A3F4B;
+	public static final int COL_GREEN_DIM = 0xFF1E4620;
+	public static final int COL_TRACK = 0xFF181B21;
+
+	/** Звук клика кнопки (как у ванильных виджетов). */
+	public static void clickSound() {
+		net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+		if (mc != null && mc.getSoundManager() != null) {
+			mc.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.master(
+					net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+		}
+	}
+
+	/** Прогресс-бар: frac 0..100. */
+	public static void progress(DrawContext ctx, int x, int y, int w, int h, int frac, int fillCol) {
+		ctx.fill(x, y, x + w, y + h, COL_TRACK);
+		int f = Math.max(0, Math.min(100, frac)) * w / 100;
+		if (f > 0) ctx.fill(x, y, x + f, y + h, fillCol);
+	}
+
+	/** Панель со «скруглёнными» углами (уголки не закрашены) — современный вид. */
+	public static void card(DrawContext ctx, int x, int y, int w, int h, int bg) {
+		ctx.fill(x + 1, y, x + w - 1, y + h, bg);
+		ctx.fill(x, y + 1, x + w, y + h - 1, bg);
+		ctx.drawHorizontalLine(x + 1, x + w - 2, y, COL_LINE);
+		ctx.drawHorizontalLine(x + 1, x + w - 2, y + h - 1, COL_LINE);
+		ctx.drawVerticalLine(x, y + 1, y + h - 2, COL_LINE);
+		ctx.drawVerticalLine(x + w - 1, y + 1, y + h - 2, COL_LINE);
+	}
 
 	public static void panel(DrawContext ctx, int x, int y, int w, int h, int bg) {
 		ctx.fill(x, y, x + w, y + h, bg);

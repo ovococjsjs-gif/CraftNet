@@ -8,7 +8,7 @@ import net.minecraft.text.Text;
 public class BankScreen extends CraftNetScreen {
 
 	private static final int PW = 220;
-	private static final int PH = 150;
+	private static final int PH = 166;
 
 	public BankScreen(NbtCompound data) {
 		super("bank", Text.translatable("craftnet.bank.title"), data);
@@ -20,7 +20,8 @@ public class BankScreen extends CraftNetScreen {
 	protected void init() {
 		super.init();
 		inputs.clear();
-		amount = new UiKit.TextInput((width - PW) / 2 + 12, (height - PH) / 2 + 64, 90, "сумма", true);
+		amount = new UiKit.TextInput((width - PW) / 2 + 12, (height - PH) / 2 + 72, 92, "сумма", true);
+		amount.maxLen = 9;
 		inputs.add(amount);
 	}
 
@@ -35,35 +36,60 @@ public class BankScreen extends CraftNetScreen {
 	@Override
 	protected void renderContent(DrawContext ctx, int mx, int my, float delta) {
 		int x = px(), y = py();
-		UiKit.panel(ctx, x, y, PW, PH, UiKit.COL_PANEL);
-		ctx.drawCenteredTextWithShadow(textRenderer, title, x + PW / 2, y - 12, UiKit.COL_ACCENT);
+		UiKit.card(ctx, x, y, PW, PH, UiKit.COL_PANEL);
 
-		UiKit.label(ctx, textRenderer, x + 12, y + 10, "Баланс счёта", UiKit.COL_TEXT_DIM);
+		// заголовок
+		UiKit.label(ctx, textRenderer, x + 10, y + 6, "Банк · банкомат", UiKit.COL_ACCENT);
+		ctx.drawHorizontalLine(x, x + PW - 1, y + 16, UiKit.COL_LINE);
+
+		// балансы
+		UiKit.card(ctx, x + 8, y + 22, PW - 16, 30, UiKit.COL_PANEL_HI);
+		UiKit.label(ctx, textRenderer, x + 16, y + 28, "На счёте", UiKit.COL_TEXT_DIM);
 		String bal = lng(data, "balance") + " CR";
-		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 12 - textRenderer.getWidth(bal), y + 10, UiKit.COL_YELLOW, false);
+		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 16 - textRenderer.getWidth(bal), y + 28,
+				UiKit.COL_YELLOW, false);
+		UiKit.label(ctx, textRenderer, x + 16, y + 40, "Банкнотами: " + lng(data, "banknotes") + " CR",
+				UiKit.COL_TEXT_DIM);
 
-		UiKit.label(ctx, textRenderer, x + 12, y + 28, "Банкноты в инвентаре: " + lng(data, "banknotes") + " CR", UiKit.COL_TEXT_DIM);
+		// обналичить
+		UiKit.label(ctx, textRenderer, x + 12, y + 60, "Снять со счёта:", UiKit.COL_TEXT);
+		// чипы быстрого ввода
+		String[] chips = {"+10", "+100", "+1000", "макс"};
+		for (int ci = 0; ci < chips.length; ci++) {
+			int bx = x + 110 + ci * 27;
+			UiKit.button(ctx, textRenderer, bx, y + 70, 25, 13, chips[ci], mx, my, true);
+			final int ci2 = ci;
+			clickable(bx, y + 70, 25, 13, () -> {
+				long cur = parse(amount.value);
+				if (ci2 == 3) amount.value = String.valueOf(lng(data, "balance"));
+				else amount.value = String.valueOf(cur + new long[]{10, 100, 1000}[ci2]);
+			});
+		}
 
-		UiKit.label(ctx, textRenderer, x + 12, y + 48, "Обналичить:", UiKit.COL_TEXT);
-
-		UiKit.button(ctx, textRenderer, x + 108, y + 62, 46, 16, "Снять", mx, my, !amount.value.isEmpty());
-		clickable(x + 108, y + 62, 46, 16, () -> {
-			if (amount.value.isEmpty()) return;
-			long v;
-			try {
-				v = Long.parseLong(amount.value);
-			} catch (NumberFormatException e) {
-				return;
-			}
+		UiKit.button(ctx, textRenderer, x + 12, y + 92, 92, 16, "Снять", mx, my, parse(amount.value) > 0);
+		clickable(x + 12, y + 92, 92, 16, () -> {
+			long v = parse(amount.value);
+			if (v <= 0) return;
 			NbtCompound a = new NbtCompound();
 			a.putLong("amount", v);
 			send("cashout", a);
 			amount.value = "";
 		});
 
-		UiKit.button(ctx, textRenderer, x + 12, y + 90, PW - 24, 18, "Внести все банкноты на счёт", mx, my, lng(data, "banknotes") > 0);
-		clickable(x + 12, y + 90, PW - 24, 18, () -> send("deposit_all", new NbtCompound()));
+		UiKit.button(ctx, textRenderer, x + 110, y + 92, PW - 122, 16, "Внести все банкноты", mx, my,
+				lng(data, "banknotes") > 0);
+		clickable(x + 110, y + 92, PW - 122, 16, () -> send("deposit_all", new NbtCompound()));
 
-		UiKit.label(ctx, textRenderer, x + 12, y + 120, "Номиналы: 1, 5, 10, 50, 100, 500, 1000 CR", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 12, y + 120, "Комиссия 0. Банкноты можно отдавать", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 12, y + 131, "другим игрокам как наличные.", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 12, y + 148, "Номиналы: 1, 5, 10, 50, 100, 500, 1000 CR", UiKit.COL_TEXT_DIM);
+	}
+
+	private static long parse(String s) {
+		try {
+			return s == null || s.isBlank() ? 0 : Long.parseLong(s.trim());
+		} catch (NumberFormatException e) {
+			return 0;
+		}
 	}
 }

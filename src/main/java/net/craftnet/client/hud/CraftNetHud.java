@@ -50,7 +50,8 @@ public final class CraftNetHud {
 		int x = w - pw - 6, y = h - ph - 6;
 
 		// панель
-		ctx.fill(x, y, x + pw, y + ph, 0x99101014);
+		ctx.fill(x + 1, y, x + pw - 1, y + ph, 0x99101014);
+		ctx.fill(x, y + 1, x + pw, y + ph - 1, 0x99101014);
 		frame(ctx, x, y, pw, ph, UiKit.COL_LINE);
 
 		// палочки сигнала
@@ -79,7 +80,7 @@ public final class CraftNetHud {
 		// GPS + баланс
 		int gpsCol = gpsOk ? 0xFF55FF55 : 0xFFFF5555;
 		ctx.drawText(mc.textRenderer, Text.literal("GPS"), x + pw - 26, y + 5, gpsCol, false);
-		String bal = balance + "";
+		String bal = balance + " CR";
 		ctx.drawText(mc.textRenderer, Text.literal(bal), x + pw - 6 - mc.textRenderer.getWidth(bal), y + 14,
 				UiKit.COL_YELLOW, false);
 	}
