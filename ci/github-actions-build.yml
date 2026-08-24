@@ -44,7 +44,7 @@ jobs:
           {
             echo "### CraftNet CI: **${{ job.status }}**"
             echo
-            echo "'$(echo ${GITHUB_SHA})'"
+            echo "\`${GITHUB_SHA}\`"
             echo
             echo '```'
             echo "== LOG HEAD =="
