@@ -114,7 +114,7 @@ public final class JobManager {
 			case T_COOK -> {
 				int parts = 3 + rng.nextInt(3); // 3..5 порций
 				offer.putInt("partsNeed", parts);
-				offer.putLong("pay", 60 + parts * 22L + rng.nextInt(10));
+				offer.putLong("pay", 40 + parts * 18L + rng.nextInt(10)); // 94..140
 				offer.putString("desc", "Приготовить порции по рецепту и разнести");
 				offer.putString("cats", String.join(",", COOK_CATS));
 			}
@@ -122,8 +122,9 @@ public final class JobManager {
 				NbtCompound target = pickTarget(player, rng);
 				if (target == null) return null;
 				if (T_LOADER.equals(type)) {
-					long pay = target.getLong("dist", 10) * 2;
-					pay = Math.max(30, Math.min(400, Math.round(pay * 1.35)));
+					// 150..190 по дальности — всегда между заводом (195+) и поваром (до 140)
+					long pay = target.getLong("dist", 10) * 4;
+					pay = Math.max(150, Math.min(190, pay));
 					offer.putLong("pay", pay);
 					offer.putString("desc", "Отнести грузовой ящик жителю");
 				} else {
