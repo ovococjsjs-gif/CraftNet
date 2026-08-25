@@ -1462,9 +1462,19 @@ public class PhoneScreen extends CraftNetScreen {
 			new AchRow("giver", "Меценат", Items.WRITABLE_BOOK),
 			new AchRow("engineer", "Инженер связи", Items.REDSTONE_TORCH),
 			new AchRow("millionaire", "Миллионер", Items.NETHERITE_INGOT),
+			new AchRow("streak5", "Стахановец", Items.GOLDEN_PICKAXE),
+			new AchRow("streak15", "Марафонец", Items.DIAMOND_PICKAXE),
+			new AchRow("director", "Директор завода", Items.BLAST_FURNACE),
+			new AchRow("chef", "Шеф-повар", Items.CAKE),
+			new AchRow("postmaster", "Почтмейстер", Items.COMPASS),
+			new AchRow("jackpot", "Джекпот", Items.NETHER_STAR),
+			new AchRow("landlord", "Рантье", Items.GOLD_BLOCK),
+			new AchRow("architect", "Архитектор сети", Items.LIGHTNING_ROD),
 	};
 
-	private boolean profileAch;
+	/** Подвкладка профиля: 0 — сводка, 1 — достижения, 2 — челленджи. */
+	private int profileTab;
+	private int achPage;
 
 	private void renderProfile(DrawContext ctx, int x, int y, int mx, int my) {
 		NbtCompound p = sub(data, "profile");
@@ -1487,14 +1497,21 @@ public class PhoneScreen extends CraftNetScreen {
 				UiKit.COL_TEXT_DIM, false);
 
 		// ---- переключатель подвкладок ----
-		UiKit.button(ctx, textRenderer, x + 8, y + 40, 90, 14, "Сводка", mx, my, true);
-		UiKit.button(ctx, textRenderer, x + 102, y + 40, 90, 14, "Достижения", mx, my, true);
-		ctx.fill(profileAch ? x + 104 : x + 10, y + 55, profileAch ? x + 190 : x + 96, y + 57, UiKit.COL_ACCENT);
-		clickable(x + 8, y + 40, 90, 14, () -> profileAch = false);
-		clickable(x + 102, y + 40, 90, 14, () -> profileAch = true);
+		UiKit.button(ctx, textRenderer, x + 8, y + 40, 66, 14, "Сводка", mx, my, true);
+		UiKit.button(ctx, textRenderer, x + 78, y + 40, 96, 14, "Достижения", mx, my, true);
+		UiKit.button(ctx, textRenderer, x + 178, y + 40, 96, 14, "Челленджи", mx, my, true);
+		int ux = profileTab == 2 ? x + 180 : profileTab == 1 ? x + 80 : x + 10;
+		ctx.fill(ux, y + 55, ux + (profileTab == 0 ? 62 : 92), y + 57, UiKit.COL_ACCENT);
+		clickable(x + 8, y + 40, 66, 14, () -> profileTab = 0);
+		clickable(x + 78, y + 40, 96, 14, () -> profileTab = 1);
+		clickable(x + 178, y + 40, 96, 14, () -> profileTab = 2);
 
-		if (profileAch) {
-			renderProfileAch(ctx, x, y, p);
+		if (profileTab == 1) {
+			renderProfileAch(ctx, x, y, p, mx, my);
+			return;
+		}
+		if (profileTab == 2) {
+			renderProfileChallenges(ctx, x, y, p);
 			return;
 		}
 
@@ -1572,18 +1589,24 @@ public class PhoneScreen extends CraftNetScreen {
 				"Достижений открыто: " + un + " / " + ACH_DEFS.length, UiKit.COL_TEXT_DIM);
 	}
 
-	/** Сетка 3×4 плиток достижений с прогрессом. */
-	private void renderProfileAch(DrawContext ctx, int x, int y, NbtCompound p) {
+	/** Сетка 3×4 плиток достижений с прогрессом (пейджинг по 12). */
+	private void renderProfileAch(DrawContext ctx, int x, int y, NbtCompound p, double mx, double my) {
 		java.util.Map<String, NbtCompound> byId = new java.util.HashMap<>();
 		for (NbtCompound r : rows(p, "ach")) byId.put(str(r, "id"), r);
-		for (int k = 0; k < ACH_DEFS.length; k++) {
+		final int per = 12;
+		int pages = Math.max(1, (ACH_DEFS.length + per - 1) / per);
+		achPage = Math.max(0, Math.min(achPage, pages - 1));
+		int from = achPage * per;
+		int to = Math.min(ACH_DEFS.length, from + per);
+		for (int k = from; k < to; k++) {
 			AchRow def = ACH_DEFS[k];
 			NbtCompound r = byId.get(def.id());
 			long cur = r == null ? 0 : lng(r, "cur");
 			long need = r == null ? 1 : Math.max(1, lng(r, "need"));
 			boolean un = r != null && i(r, "un") == 1;
-			int tx = x + 8 + (k % 3) * 96;
-			int ty = y + 64 + (k / 3) * 32;
+			int idx = k - from;
+			int tx = x + 8 + (idx % 3) * 96;
+			int ty = y + 64 + (idx / 3) * 32;
 			UiKit.card(ctx, tx, ty, 94, 30, un ? 0xFF1E3020 : UiKit.COL_PANEL);
 			ctx.drawItem(def.icon().getDefaultStack(), tx + 4, ty + 4);
 			UiKit.label(ctx, textRenderer, tx + 24, ty + 3, trim(def.name(), 11),
@@ -1595,8 +1618,55 @@ public class PhoneScreen extends CraftNetScreen {
 					un ? 100 : (int) Math.min(100, cur * 100 / need),
 					un ? UiKit.COL_GREEN : UiKit.COL_ACCENT);
 		}
-		UiKit.label(ctx, textRenderer, x + 10, y + 66 + 4 * 32,
+		// пейджер в стиле магазина + подсказка
+		int py2 = y + 66 + 4 * 32;
+		UiKit.button(ctx, textRenderer, x + 8, py2 - 3, 18, 14, "<", mx, my, achPage > 0);
+		clickable(x + 8, py2 - 3, 18, 14, () -> achPage = Math.max(0, achPage - 1));
+		UiKit.label(ctx, textRenderer, x + 34, py2, (achPage + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
+		UiKit.button(ctx, textRenderer, x + 66, py2 - 3, 18, 14, ">", mx, my, achPage + 1 < pages);
+		clickable(x + 66, py2 - 3, 18, 14, () -> achPage = Math.min(pages - 1, achPage + 1));
+		UiKit.label(ctx, textRenderer, x + 110, py2,
 				"каждое достижение даёт опыт профиля", UiKit.COL_TEXT_DIM);
+	}
+
+	/** Три активных челленджа сезона: имя, условие, прогресс, награда, таймер ротации. */
+	private void renderProfileChallenges(DrawContext ctx, int x, int y, NbtCompound p) {
+		UiKit.label(ctx, textRenderer, x + 10, y + 64, "ЧЕЛЛЕНДЖИ СЕЗОНА", UiKit.COL_ACCENT);
+		long mins = lng(p, "chLeft") / 1200; // 1200 тиков = минута реального времени
+		String left = mins >= 60 ? "осталось " + (mins / 60) + "ч " + (mins % 60) + "м"
+				: "осталось " + Math.max(1, mins) + "м";
+		ctx.drawText(textRenderer, Text.literal(left), x + PW - 12 - textRenderer.getWidth(left), y + 64,
+				UiKit.COL_YELLOW, false);
+		java.util.List<NbtCompound> list = rows(p, "chall");
+		if (list.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 10, y + 82,
+					"Челленджи появятся с новым сезоном.", UiKit.COL_TEXT_DIM);
+			return;
+		}
+		int cy = y + 76;
+		for (NbtCompound r : list) {
+			boolean done = i(r, "done") == 1;
+			long cur = lng(r, "cur");
+			long need = Math.max(1, lng(r, "need"));
+			UiKit.card(ctx, x + 8, cy, PW - 16, 34, done ? 0xFF1E3020 : UiKit.COL_PANEL);
+			UiKit.label(ctx, textRenderer, x + 16, cy + 4,
+					done ? "✓ " + str(r, "name") : str(r, "name"),
+					done ? UiKit.COL_GREEN : UiKit.COL_TEXT);
+			String rw = "+" + lng(r, "rcr") + " CR · +" + lng(r, "xp") + " XP";
+			ctx.drawText(textRenderer, Text.literal(rw), x + PW - 18 - textRenderer.getWidth(rw), cy + 4,
+					done ? UiKit.COL_GREEN : UiKit.COL_YELLOW, false);
+			UiKit.label(ctx, textRenderer, x + 16, cy + 14, trim(str(r, "desc"), 46), UiKit.COL_TEXT_DIM);
+			UiKit.progress(ctx, x + 16, cy + 26, PW - 90, 4,
+					done ? 100 : (int) Math.min(100, cur * 100 / need),
+					done ? UiKit.COL_GREEN : UiKit.COL_ACCENT);
+			String pr = cur + " / " + need;
+			ctx.drawText(textRenderer, Text.literal(done ? "выполнено" : pr),
+					x + PW - 24 - textRenderer.getWidth(done ? "выполнено" : pr), cy + 24,
+					done ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM, false);
+			cy += 38;
+		}
+		UiKit.label(ctx, textRenderer, x + 10, cy + 2,
+				"прогресс — только действия текущего сезона", UiKit.COL_TEXT_DIM);
 	}
 
 	// ----------------------------------------------------------------
@@ -1632,6 +1702,14 @@ public class PhoneScreen extends CraftNetScreen {
 				if (!casinoPickMode) return false;
 				NbtCompound targets = sub(sub(data, "casino"), "targets");
 				return scrollTo(i(targets, "page"), i(targets, "pages"), step, p -> casinoQuery(targetQuery, p));
+			}
+			case PROFILE -> {
+				if (profileTab != 1) return false;
+				int pages = Math.max(1, (ACH_DEFS.length + 11) / 12);
+				int np = Math.max(0, Math.min(pages - 1, achPage + step));
+				if (np == achPage) return false;
+				achPage = np;
+				return true;
 			}
 			default -> {
 				return false;
