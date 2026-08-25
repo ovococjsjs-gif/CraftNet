@@ -30,12 +30,15 @@ public class BankScreen extends CraftNetScreen {
 		inputs.add(amount);
 	}
 
+	@Override protected int designWidth() { return PW + 16; }
+	@Override protected int designHeight() { return PH + 16; }
+
 	private int px() {
-		return (width - PW) / 2;
+		return (canvasWidth() - PW) / 2;
 	}
 
 	private int py() {
-		return (height - PH) / 2;
+		return (canvasHeight() - PH) / 2;
 	}
 
 	@Override

@@ -16,13 +16,33 @@ CONFIG = ROOT / 'src/main/java/net/craftnet/config/CraftNetConfig.java'
 def price_table():
     """Таблица buy-цен из PriceManager.java → {minecraft_id: CR}."""
     src = (ECON / 'PriceManager.java').read_text(encoding='utf-8')
+    src = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
+    src = re.sub(r'//.*', '', src)
     return {k.lower(): int(v) for k, v in
             re.findall(r'put\(Items\.([A-Z_]+),\s*(\d+)\)', src)}
 
 
+def compression_base():
+    src = (ECON / 'PriceManager.java').read_text(encoding='utf-8')
+    m = re.search(r'COMPRESSION_BASE\s*=\s*java\.util\.Map\.ofEntries\((.*?)\);', src, re.S)
+    if not m:
+        return {}
+    return {a: b for a, b in re.findall(
+        r'Map\.entry\("minecraft:([a-z0-9_]+)",\s*"minecraft:([a-z0-9_]+)"\)', m.group(1))}
+
+
+def buy_deny():
+    """IDs deliberately excluded from the infinite server shop."""
+    src = (ECON / 'PriceManager.java').read_text(encoding='utf-8')
+    m = re.search(r'BUY_DENY\s*=\s*java\.util\.Set\.of\((.*?)\);', src, re.S)
+    return set(re.findall(r'"minecraft:([a-z0-9_]+)"', m.group(1))) if m else set()
+
+
 def sell_price(buy: int) -> int:
     """Зеркало PriceManager.sellPrice при дефолтных коэффициентах (floor)."""
-    r = 0.55 if buy <= 9 else (0.80 if buy >= 500 else 0.68)
+    cfg = config_defaults()
+    r = cfg['sellRatioCheap'] if buy <= 9 else (
+        cfg['sellRatioExpensive'] if buy >= 500 else cfg['sellRatioMid'])
     return int(buy * r)
 
 

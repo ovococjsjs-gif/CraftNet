@@ -90,11 +90,11 @@ public final class CraftNetConfig {
 
 	// ---- продажа игрок → сервер (ступенчатая кривая от цены покупки) ----
 	/** Коэффициент продажи дешёвых товаров (buy ≤ 9 CR): антифарм хлама. */
-	public double sellRatioCheap = 0.55;
+	public double sellRatioCheap = 0.65;
 	/** Коэффициент продажи средних товаров (buy 10..499 CR). */
-	public double sellRatioMid = 0.68;
-	/** Коэффициент продажи дорогих товаров (buy ≥ 500 CR): эндгейм-лут. */
-	public double sellRatioExpensive = 0.80;
+	public double sellRatioMid = 0.65;
+	/** Коэффициент продажи дорогих товаров (buy ≥ 500 CR). */
+	public double sellRatioExpensive = 0.65;
 
 	// ---- казино-апгрейдер ----
 	/** Возврат игроку, % (RTP). Шанс спина = stake/цель × rtp/100: 90 = казино в среднем удерживает 10% оборота. */
@@ -113,6 +113,11 @@ public final class CraftNetConfig {
 	public long stocksDividendCapPerCompany = 2_500;
 
 	// ---- вышки / магазин ----
+	/** Стоимость переходов вышки 0→1→2→3→4. */
+	public int towerUpgradeCost1 = 500;
+	public int towerUpgradeCost2 = 1500;
+	public int towerUpgradeCost3 = 4000;
+	public int towerUpgradeCost4 = 9000;
 	/** Скидка «умной вышки» ур.4 в магазине, %. */
 	public double shopSmartTowerDiscountPct = 5.0;
 	/** Период ресинхронизации открытых экранов, тиков (20 = 1 с). */
@@ -213,18 +218,26 @@ public final class CraftNetConfig {
 		if (stocksMaxExposure < 1_000) stocksMaxExposure = 1_000;
 		if (stocksMaxExposure > 10_000_000) stocksMaxExposure = 10_000_000;
 		if (stocksDividendCapPerCompany < 0) stocksDividendCapPerCompany = 0;
+		towerUpgradeCost1 = clampCost(towerUpgradeCost1);
+		towerUpgradeCost2 = clampCost(towerUpgradeCost2);
+		towerUpgradeCost3 = clampCost(towerUpgradeCost3);
+		towerUpgradeCost4 = clampCost(towerUpgradeCost4);
 		if (shopSmartTowerDiscountPct < 0) shopSmartTowerDiscountPct = 0;
 		if (shopSmartTowerDiscountPct > 50) shopSmartTowerDiscountPct = 50;
-		if (sellRatioCheap < 0.05 || sellRatioCheap > 0.95) sellRatioCheap = 0.55;
-		if (sellRatioMid < 0.05 || sellRatioMid > 0.95) sellRatioMid = 0.68;
-		if (sellRatioExpensive < 0.05 || sellRatioExpensive > 0.95) sellRatioExpensive = 0.80;
+		if (sellRatioCheap < 0.05 || sellRatioCheap > 0.95) sellRatioCheap = 0.65;
+		if (sellRatioMid < 0.05 || sellRatioMid > 0.95) sellRatioMid = 0.65;
+		if (sellRatioExpensive < 0.05 || sellRatioExpensive > 0.95) sellRatioExpensive = 0.65;
 		// кривая обязана быть неубывающей — иначе сбрасываем на дефолты
 		if (!(sellRatioCheap <= sellRatioMid && sellRatioMid <= sellRatioExpensive)) {
-			sellRatioCheap = 0.55;
-			sellRatioMid = 0.68;
-			sellRatioExpensive = 0.80;
+			sellRatioCheap = 0.65;
+			sellRatioMid = 0.65;
+			sellRatioExpensive = 0.65;
 		}
 		if (screenSyncTicks < 4) screenSyncTicks = 4;
 		if (screenSyncTicks > 100) screenSyncTicks = 100;
+	}
+
+	private static int clampCost(int value) {
+		return Math.max(0, Math.min(10_000_000, value));
 	}
 }

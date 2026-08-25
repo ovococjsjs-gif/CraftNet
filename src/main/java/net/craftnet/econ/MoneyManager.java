@@ -23,10 +23,18 @@ public final class MoneyManager {
 
 	private static final int TX_LOG_MAX = 16;
 
-	/** Дневной банковский процент на остаток (доля), потолок и минимальный баланс. */
-	public static final double DAILY_INTEREST = net.craftnet.config.CraftNetConfig.get().bankInterestPctPerDay / 100.0;
-	public static final long INTEREST_CAP = net.craftnet.config.CraftNetConfig.get().bankInterestCap;
-	public static final long INTEREST_MIN_BAL = net.craftnet.config.CraftNetConfig.get().bankInterestMinBalance;
+	/** Reload-safe bank config. */
+	private static double dailyInterest() {
+		return net.craftnet.config.CraftNetConfig.get().bankInterestPctPerDay / 100.0;
+	}
+
+	private static long interestCap() {
+		return net.craftnet.config.CraftNetConfig.get().bankInterestCap;
+	}
+
+	private static long interestMinBalance() {
+		return net.craftnet.config.CraftNetConfig.get().bankInterestMinBalance;
+	}
 
 	public static MoneyState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(MoneyState.TYPE);
@@ -55,8 +63,13 @@ public final class MoneyManager {
 	public static long add(MinecraftServer server, UUID id, long amount, String reason) {
 		MoneyState st = state(server);
 		NbtCompound rec = rec(st, id);
-		long bal = Nbt2.lng(rec, "bal") + amount;
-		if (bal < 0) bal = 0;
+		long before = Nbt2.lng(rec, "bal");
+		long bal;
+		try {
+			bal = Math.addExact(before, amount);
+		} catch (ArithmeticException overflow) {
+			bal = amount >= 0 ? Long.MAX_VALUE : Long.MIN_VALUE;
+		}
 		rec.putLong("bal", bal);
 		appendTx(rec, server, amount, reason);
 		saveRec(st, id, rec);
@@ -65,9 +78,18 @@ public final class MoneyManager {
 
 	/** @return true, если хватило средств и списание прошло. */
 	public static boolean tryCharge(MinecraftServer server, UUID id, long amount, String reason) {
-		if (balance(server, id) < amount) return false;
+		if (amount <= 0 || balance(server, id) < amount) return false;
 		add(server, id, -amount, reason);
 		return true;
+	}
+
+	/**
+	 * Fines create an enforceable negative balance instead of disappearing when
+	 * the player has zero CR. Future income automatically repays this debt.
+	 */
+	public static long chargeFine(MinecraftServer server, UUID id, long amount, String reason) {
+		if (amount <= 0) return balance(server, id);
+		return add(server, id, -amount, reason);
 	}
 
 	/** Журнал — структурный: {a: дельта CR, r: причина, at: игровое время}. */
@@ -140,8 +162,8 @@ public final class MoneyManager {
 				continue;
 			}
 			long bal = balance(server, id);
-			if (bal < INTEREST_MIN_BAL) continue;
-			long interest = Math.min(INTEREST_CAP, Math.round(bal * DAILY_INTEREST));
+			if (bal < interestMinBalance()) continue;
+			long interest = Math.min(interestCap(), Math.round(bal * dailyInterest()));
 			if (interest <= 0) continue;
 			add(server, id, interest, "процент банка");
 			ServerPlayerEntity pl = server.getPlayerManager().getPlayer(id);

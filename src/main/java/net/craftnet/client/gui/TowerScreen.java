@@ -12,6 +12,7 @@ import net.minecraft.text.Text;
  */
 public class TowerScreen extends CraftNetScreen {
 
+	private long confirmUntil = -1;
 	private static final int PW2 = 300;
 	private static final int PH2 = 200;
 
@@ -19,10 +20,13 @@ public class TowerScreen extends CraftNetScreen {
 		super("tower", Text.translatable("craftnet.tower.title"), data);
 	}
 
+	@Override protected int designWidth() { return PW2 + 16; }
+	@Override protected int designHeight() { return PH2 + 16; }
+
 	@Override
 	protected void renderContent(DrawContext ctx, int mx, int my, float delta) {
-		int x = (width - PW2) / 2;
-		int y = (height - PH2) / 2;
+		int x = (canvasWidth() - PW2) / 2;
+		int y = (canvasHeight() - PH2) / 2;
 		UiKit.card(ctx, x - 6, y - 6, PW2 + 12, PH2 + 12, 0xFF0B0D10);
 		ctx.fill(x, y, x + PW2, y + PH2, UiKit.COL_BG);
 
@@ -108,11 +112,21 @@ public class TowerScreen extends CraftNetScreen {
 				if (i(row, "lv") == tlv + 1) nextCost = i(row, "cost");
 			}
 			boolean can = nextCost >= 0 && lng(data, "balance") >= nextCost;
-			String label = "Улучшить до ур." + (tlv + 1) + " · " + nextCost + " CR";
+			long now = client != null && client.world != null ? client.world.getTime() : 0;
+			boolean armed = now < confirmUntil;
+			String label = armed ? "Подтвердить списание " + nextCost + " CR"
+					: "Улучшить до ур." + (tlv + 1) + " · " + nextCost + " CR";
 			UiKit.button(ctx, textRenderer, x + 8, y + PH2 - 22, PW2 - 16, 16, label, mx, my, can);
 			if (can) {
-				clickable(x + 8, y + PH2 - 22, PW2 - 16, 16,
-						() -> send("upgrade", new NbtCompound()));
+				clickable(x + 8, y + PH2 - 22, PW2 - 16, 16, () -> {
+					long clickNow = client != null && client.world != null ? client.world.getTime() : 0;
+					if (clickNow >= confirmUntil) {
+						confirmUntil = clickNow + 80;
+						return;
+					}
+					confirmUntil = -1;
+					send("upgrade", new NbtCompound());
+				});
 			}
 		}
 	}

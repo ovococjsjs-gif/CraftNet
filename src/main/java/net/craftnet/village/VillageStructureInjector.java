@@ -43,6 +43,8 @@ public final class VillageStructureInjector {
 			"craftnet:village/cafe", 5);
 
 	private static final String[] TYPES = {"plains", "desert", "savanna", "snowy", "taiga"};
+	private static final java.util.Set<StructurePool> INJECTED =
+			java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
 
 	public static void inject(MinecraftServer server) {
 		int existing = 0;
@@ -76,6 +78,9 @@ public final class VillageStructureInjector {
 	}
 
 	private static int addToPool(StructurePool pool) {
+		synchronized (INJECTED) {
+			if (!INJECTED.add(pool)) return 0;
+		}
 		StructurePoolAccessor acc = (StructurePoolAccessor) pool;
 		List<Pair<StructurePoolElement, Integer>> weights =
 				new ArrayList<>(acc.craftnet$getElementWeights());

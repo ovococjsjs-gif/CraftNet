@@ -6,19 +6,17 @@ import java.util.UUID;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
-import net.minecraft.nbt.NbtOps;
-import net.minecraft.registry.RegistryOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.BlockPos;
 
+import net.craftnet.config.CraftNetConfig;
 import net.craftnet.jobs.JobManager;
 import net.craftnet.orders.OrderManager;
 import net.craftnet.state.MarketState;
 import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
+import net.craftnet.util.StackOps;
 
 /**
  * Барахолка — маркетплейс игроков.
@@ -32,11 +30,11 @@ import net.craftnet.util.Nbt2;
 public final class MarketManager {
 	private MarketManager() {}
 
-	public static final double FEE = net.craftnet.config.CraftNetConfig.get().marketFeePct / 100.0;
-	public static final long TTL_TICKS = net.craftnet.config.CraftNetConfig.get().marketTtlTicks; // 3 игровых дня (конфиг)
-	public static final int RETURN_TICKS = net.craftnet.config.CraftNetConfig.get().marketReturnTicks; // 1 минута (конфиг)
-	public static final int MAX_PER_PLAYER = net.craftnet.config.CraftNetConfig.get().marketMaxPerPlayer;
-	public static final int PRICE_MAX = net.craftnet.config.CraftNetConfig.get().marketPriceMax;
+	public static double fee() { return CraftNetConfig.get().marketFeePct / 100.0; }
+	public static long ttlTicks() { return CraftNetConfig.get().marketTtlTicks; }
+	public static int returnTicks() { return CraftNetConfig.get().marketReturnTicks; }
+	public static int maxPerPlayer() { return CraftNetConfig.get().marketMaxPerPlayer; }
+	public static int priceMax() { return CraftNetConfig.get().marketPriceMax; }
 
 	// коды результата buy()
 	public static final int BUY_OK = 0;
@@ -46,19 +44,6 @@ public final class MarketManager {
 
 	public static MarketState get(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(MarketState.TYPE);
-	}
-
-	private static RegistryOps<NbtElement> ops(MinecraftServer server) {
-		return RegistryOps.of(NbtOps.INSTANCE, server.getRegistryManager());
-	}
-
-	private static NbtCompound encodeStack(MinecraftServer server, ItemStack stack) {
-		return (NbtCompound) ItemStack.CODEC.encodeStart(ops(server), stack).result()
-				.orElseGet(NbtCompound::new);
-	}
-
-	private static ItemStack decodeStack(MinecraftServer server, NbtCompound nbt) {
-		return ItemStack.CODEC.parse(ops(server), nbt).result().orElse(ItemStack.EMPTY);
 	}
 
 	private static long nextId(MarketState st) {
@@ -94,24 +79,28 @@ public final class MarketManager {
 	 * Выставить лот из инвентаря игрока.
 	 * @return 0 при успехе, 1 — лимит лотов, 2 — нет предмета, 3 — кривая цена.
 	 */
-	public static int create(MinecraftServer server, ServerPlayerEntity player, String itemId,
-			int count, int priceEach, int vx, int vy, int vz, String vname) {
-		if (priceEach <= 0 || priceEach > PRICE_MAX) return 3;
-		if (listingsOf(server, player.getUuid()) >= MAX_PER_PLAYER) return 1;
-		var item = net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.tryParse(itemId));
-		if (item == null || !PriceManager.tradeable(itemId)) return 2;
-		// рабочее имущество (◆ материалы/грузы) выставлять нельзя — анти-фарм
-		int have = JobManager.countSellable(player, item);
-		count = Math.min(Math.min(count, 64), have);
+	public static int create(MinecraftServer server, ServerPlayerEntity player, int slot,
+			NbtCompound expectedStack, int count, int priceEach,
+			int vx, int vy, int vz, String vname) {
+		if (priceEach <= 0 || priceEach > priceMax()) return 3;
+		if (listingsOf(server, player.getUuid()) >= maxPerPlayer()) return 1;
+		if (slot < 0 || slot >= player.getInventory().size()) return 2;
+		ItemStack current = player.getInventory().getStack(slot);
+		if (current.isEmpty() || JobManager.isJobTagged(current)
+				|| !StackOps.sameIdentity(server, current, expectedStack)) return 2;
+		String itemId = net.minecraft.registry.Registries.ITEM.getId(current.getItem()).toString();
+		if (!PriceManager.tradeable(itemId)) return 2;
+		count = Math.min(Math.min(count, 64), current.getCount());
 		if (count <= 0) return 2;
-		JobManager.removeSellable(player, item, count);
+		ItemStack listed = StackOps.takeExact(player, server, slot, expectedStack, count);
+		if (listed.isEmpty()) return 2;
 
 		MarketState st = get(server);
 		NbtCompound l = new NbtCompound();
 		l.putLong("id", nextId(st));
 		l.putString("seller", player.getUuidAsString());
 		l.putString("sellerName", player.getName().getString());
-		l.put("item", encodeStack(server, new ItemStack(item, count)));
+		l.put("item", StackOps.encode(server, listed));
 		l.putInt("price", priceEach);
 		l.putLong("created", server.getOverworld().getTime());
 		l.putInt("vx", vx);
@@ -149,7 +138,7 @@ public final class MarketManager {
 		if (lot == null) return BUY_GONE;
 		if (buyer.getUuidAsString().equals(Nbt2.str(lot, "seller"))) return BUY_OWN;
 
-		ItemStack stack = decodeStack(server, Nbt2.sub(lot, "item"));
+		ItemStack stack = StackOps.decode(server, Nbt2.sub(lot, "item"));
 		if (stack.isEmpty()) return BUY_GONE;
 		long total = (long) Nbt2.i(lot, "price") * stack.getCount();
 		if (!MoneyManager.tryCharge(server, buyer.getUuid(), total, "барахолка: покупка")) {
@@ -161,10 +150,10 @@ public final class MarketManager {
 				buyerVillageX, buyerVillageY, buyerVillageZ, buyerVillageName, readyTick);
 
 		// выплата продавцу минус комиссия (с задержкой, как продажа в ПВЗ)
-		long sellerGet = Math.max(1, total - Math.round(total * FEE));
+		long sellerGet = Math.max(1, total - Math.round(total * fee()));
 		try {
 			UUID seller = UUID.fromString(Nbt2.str(lot, "seller"));
-			long payTick = server.getOverworld().getTime() + OrderManager.BASE_TRAVEL_TICKS;
+			long payTick = server.getOverworld().getTime() + OrderManager.baseTravelTicks();
 			OrderManager.newPayout(server, seller, sellerGet,
 					"барахолка: " + stack.getName().getString() + " ×" + stack.getCount(), payTick);
 		} catch (IllegalArgumentException ignored) {
@@ -210,7 +199,7 @@ public final class MarketManager {
 		List<Integer> toRemove = new ArrayList<>();
 		for (int i = 0; i < list.size(); i++) {
 			if (!(list.get(i) instanceof NbtCompound l)) continue;
-			if (now - l.getLong("created", 0L) < TTL_TICKS) continue;
+			if (now - l.getLong("created", 0L) < ttlTicks()) continue;
 			returnLot(server, l, now);
 			toRemove.add(i);
 		}
@@ -223,14 +212,14 @@ public final class MarketManager {
 	}
 
 	private static void returnLot(MinecraftServer server, NbtCompound l, long now) {
-		ItemStack stack = decodeStack(server, Nbt2.sub(l, "item"));
+		ItemStack stack = StackOps.decode(server, Nbt2.sub(l, "item"));
 		if (stack.isEmpty()) return;
 		try {
 			UUID seller = UUID.fromString(Nbt2.str(l, "seller"));
 			OrderManager.newDelivery(server, seller, stack,
 					Nbt2.i(l, "vx"), Nbt2.i(l, "vy"), Nbt2.i(l, "vz"),
 					Nbt2.str(l, "vname").isEmpty() ? "ПВЗ" : Nbt2.str(l, "vname"),
-					now + RETURN_TICKS);
+					now + returnTicks());
 		} catch (IllegalArgumentException ignored) {
 		}
 	}
@@ -249,7 +238,7 @@ public final class MarketManager {
 		List<NbtCompound> all = all(server);
 		for (int i = all.size() - 1; i >= 0; i--) {
 			NbtCompound l = all.get(i);
-			ItemStack stack = decodeStack(server, Nbt2.sub(l, "item"));
+			ItemStack stack = StackOps.decode(server, Nbt2.sub(l, "item"));
 			if (stack.isEmpty()) continue;
 			NbtCompound c = new NbtCompound();
 			c.putLong("lid", l.getLong("id", 0L));

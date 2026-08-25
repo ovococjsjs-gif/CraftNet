@@ -14,6 +14,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.sound.BlockSoundGroup;
 
 import net.craftnet.CraftNet;
+import net.craftnet.item.JobCargoBlockItem;
 import net.craftnet.item.ModItems;
 
 public final class ModBlocks {
@@ -54,9 +55,14 @@ public final class ModBlocks {
 	private static Block register(String name, Function<AbstractBlock.Settings, Block> factory, AbstractBlock.Settings settings) {
 		RegistryKey<Block> key = RegistryKey.of(RegistryKeys.BLOCK, CraftNet.id(name));
 		Block block = Registry.register(Registries.BLOCK, key, factory.apply(settings.registryKey(key)));
-		// BlockItem с тем же именем
+		// BlockItem с тем же именем. Рабочий cargo_crate запрещает placement,
+		// иначе item component job_tag исчезает в block state и отмывается loot table.
 		RegistryKey<Item> itemKey = RegistryKey.of(RegistryKeys.ITEM, CraftNet.id(name));
-		ModItems.registerRaw(itemKey, s -> new BlockItem(block, s), new Item.Settings());
+		if ("cargo_crate".equals(name)) {
+			ModItems.registerRaw(itemKey, s -> new JobCargoBlockItem(block, s), new Item.Settings());
+		} else {
+			ModItems.registerRaw(itemKey, s -> new BlockItem(block, s), new Item.Settings());
+		}
 		return block;
 	}
 

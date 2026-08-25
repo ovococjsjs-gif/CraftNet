@@ -226,18 +226,20 @@ public final class JobManager {
 				offer.putString("desc", "Повторяй схему кликами по компонентам");
 				offer.putString("cats", String.join(",", FACTORY_CATS));
 			}
-			case T_FACTORY_ORDER -> {
-				if (!buildCraftOffer(offer, rng, FACTORY_RECIPES,
-						cfg.jobOrderFactoryMatsPct, cfg.jobOrderFactoryBonus,
-						cfg.jobOrderFactoryMinPay, cfg.jobOrderFactoryMaxPay, 1, 2, 2, 3)) return null;
-				offer.putString("desc", "Цех выдаст материалы — собери на верстаке и сдай");
-			}
-			case T_COOK -> {
-				if (!buildCraftOffer(offer, rng, CAFE_RECIPES,
-						cfg.jobOrderCookMatsPct, cfg.jobOrderCookBonus,
-						cfg.jobOrderCookMinPay, cfg.jobOrderCookMaxPay, 2, 3, 2, 4)) return null;
-				offer.putString("desc", "Бариста выдаст продукты — приготовь и сдай заказ");
-			}
+				case T_FACTORY_ORDER -> {
+					if (!buildCraftOffer(offer, rng, FACTORY_RECIPES,
+							cfg.jobOrderFactoryMatsPct, cfg.jobOrderFactoryBonus,
+							cfg.jobOrderFactoryMinPay, cfg.jobOrderFactoryMaxPay, 1, 2, 2, 3)) return null;
+					offer.putString("desc", "Собери заказ из своих материалов и сдай готовые детали");
+					offer.putInt("issued", 0);
+				}
+				case T_COOK -> {
+					if (!buildCraftOffer(offer, rng, CAFE_RECIPES,
+							cfg.jobOrderCookMatsPct, cfg.jobOrderCookBonus,
+							cfg.jobOrderCookMinPay, cfg.jobOrderCookMaxPay, 2, 3, 2, 4)) return null;
+					offer.putString("desc", "Приготовь заказ из своих продуктов и сдай блюда");
+					offer.putInt("issued", 0);
+				}
 			case T_LOADER, T_COURIER -> {
 				NbtCompound target = pickTarget(player, rng);
 				if (target == null) return null;
@@ -378,15 +380,9 @@ public final class JobManager {
 			rec.put("data", data);
 		}
 
-		if (isCraftOrder(type)) {
-			// выдаём помеченные материалы
-			for (var el : Nbt2.sub(rec, "data").getListOrEmpty("mats")) {
-				if (!(el instanceof NbtCompound m)) continue;
-				Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(m, "id")));
-				if (item == null) continue;
-				giveTagged(player, item, Nbt2.i(m, "count"), tag, true);
-			}
-		}
+		// Craft orders no longer hand out liquid vanilla materials. The old
+		// design could be laundered through vanilla crafting because arbitrary
+		// ingredient components do not propagate to a recipe output.
 
 		if (T_LOADER.equals(type)) {
 			giveTagged(player, ModBlocks.CARGO_CRATE.asItem(), 1, tag, false);
@@ -532,13 +528,16 @@ public final class JobManager {
 			Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(t, "id")));
 			removeFromInventory(player, item, Nbt2.i(t, "need"));
 		}
-		// конфискаем остатки выданных ◆материалов — смена закрыта, склад не складируется
-		String tag = tagOf(player.getUuid(), type);
-		for (var el : data.getListOrEmpty("mats")) {
-			if (!(el instanceof NbtCompound m)) continue;
-			Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(m, "id")));
-			if (item == null) continue;
-			removeTagged(player, item, tag, Integer.MAX_VALUE);
+		// Migration cleanup for active jobs created by v1.1, which did issue
+		// tagged materials. New jobs have issued=0 and use player-owned inputs.
+		if (data.getInt("issued", 1) == 1) {
+			String tag = tagOf(player.getUuid(), type);
+			for (var el : data.getListOrEmpty("mats")) {
+				if (!(el instanceof NbtCompound m)) continue;
+				Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(m, "id")));
+				if (item == null) continue;
+				removeTagged(player, item, tag, Integer.MAX_VALUE);
+			}
 		}
 		long pay = Nbt2.lng(data, "pay");
 		MoneyManager.add(server, player.getUuid(), pay,
@@ -571,11 +570,14 @@ public final class JobManager {
 		if (!uuid.equals(target.getString("uuid", ""))) return false;
 		Item need = T_LOADER.equals(type) ? ModBlocks.CARGO_CRATE.asItem() : ModItems.FOOD_BOX;
 		int needCount = Nbt2.i(rec, "carryNeed");
-		if (countInInventory(player, need) < needCount) {
+		String cargoTag = tagOf(player.getUuid(), type);
+		if (countTagged(player, need, cargoTag) < needCount) {
 			player.sendMessage(Text.translatable("craftnet.job.no_cargo"), true);
 			return false;
 		}
-		removeFromInventory(player, need, needCount);
+		removeTagged(player, need, cargoTag, needCount);
+		// Defensive cleanup: a successful shift must never leave reusable job cargo.
+		removeTagged(player, need, cargoTag, Integer.MAX_VALUE);
 		entity.setGlowing(false);
 		long pay = Nbt2.lng(Nbt2.sub(rec, "data"), "pay");
 		MoneyManager.add(server, player.getUuid(), pay,
@@ -616,8 +618,8 @@ public final class JobManager {
 			long matLoss = 0;
 
 			ServerPlayerEntity pl = server.getPlayerManager().getPlayer(player);
-			if (isCraftOrder(type)) {
-				// конфискуем помеченные материалы; недостачу оцениваем в деньги
+			if (isCraftOrder(type) && data.getInt("issued", 1) == 1) {
+				// Migration cleanup for legacy jobs that issued tagged materials.
 				String tag = tagOf(player, type);
 				for (var el : data.getListOrEmpty("mats")) {
 					if (!(el instanceof NbtCompound m)) continue;
@@ -645,8 +647,9 @@ public final class JobManager {
 			StatsManager.bump(server, player, StatsManager.FINES_PAID, total);
 			StatsManager.set(server, player, StatsManager.JOBS_STREAK, 0); // срыв обнуляет серию
 			if (total > 0) {
-				long bal = MoneyManager.balance(server, player);
-				MoneyManager.add(server, player, -Math.min(bal, total), "штраф за срыв смены");
+				// A fine is debt, not a best-effort withdrawal. Otherwise a zero balance
+				// plus a delayed PvZ payout launders all issued value for free.
+				MoneyManager.chargeFine(server, player, total, "штраф за срыв смены");
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(player);
 				if (p != null) {
 					p.sendMessage(Text.translatable("craftnet.job.fined", total)

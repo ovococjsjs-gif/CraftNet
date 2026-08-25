@@ -9,21 +9,20 @@
 Запуск:  python3 tools/audit_prices.py
 Код возврата 0 = всё чисто, 1 = найден арбитраж (печатает список).
 """
-import re
 import sys
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / 'src/main/java/net/craftnet/econ/PriceManager.java'
-src = SRC.read_text(encoding='utf-8')
-puts = re.findall(r'put\(Items\.([A-Z_]+),\s*(\d+)\)', src)
-T = {k.lower(): int(v) for k, v in puts}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from priceparse import buy_deny, compression_base, price_table, sell_price
+
+T = price_table()
+BUY_DENY = buy_deny()
+COMPRESSION = compression_base()
 
 FUEL = 0.5  # средняя доля угля (4 CR) на одну плавку
 
 def sell(b: int) -> int:
-    # зеркало PriceManager.sellPrice при дефолтных коэффициентах
-    r = 0.55 if b <= 9 else (0.80 if b >= 500 else 0.68)
-    return int(b * r)
+    return sell_price(b)
 
 # (продукт, [(материал, шт)], выход шт) — все крафты, где и материалы, и продукт в таблице
 R = [
@@ -163,6 +162,16 @@ for u, bl in PAIRS:
     u9, got = T[u] * 9, T[bl]
     if abs(got - u9) > 3:
         viol.append(f'I2 {bl}: {got} != 9*{u} ({u9})')
+    # Java sellPrice must explicitly preserve payout across compression despite floor rounding.
+    if COMPRESSION.get(bl) != u:
+        viol.append(f'I2-sell {bl}: COMPRESSION_BASE does not point to {u}')
+
+# Ores whose drop is multiplied by Fortune may be sold by players but must not
+# be purchasable from the infinite catalog (buy ore -> Fortune -> sell drops).
+for ore in ('diamond_ore', 'deepslate_diamond_ore', 'emerald_ore', 'deepslate_emerald_ore',
+            'lapis_ore', 'deepslate_lapis_ore', 'copper_ore', 'deepslate_copper_ore'):
+    if ore not in BUY_DENY:
+        viol.append(f'I4 Fortune-sensitive ore is buyable: {ore}')
 
 anchors = {'elytra': 8000, 'nether_star': 2000, 'beacon': 2500}
 for k, want in anchors.items():

@@ -25,6 +25,20 @@ public abstract class CraftNetScreen extends Screen {
 
 	protected record Region(int x, int y, int w, int h, Runnable onClick) {}
 
+	/** Logical design bounds. Content scales down only when the GUI is smaller. */
+	protected int designWidth() { return 0; }
+	protected int designHeight() { return 0; }
+
+	protected final float uiScale() {
+		if (designWidth() <= 0 || designHeight() <= 0) return 1.0f;
+		float sx = Math.max(0.25f, (width - 8.0f) / designWidth());
+		float sy = Math.max(0.25f, (height - 8.0f) / designHeight());
+		return Math.min(1.0f, Math.min(sx, sy));
+	}
+
+	protected final int canvasWidth() { return (int) Math.floor(width / uiScale()); }
+	protected final int canvasHeight() { return (int) Math.floor(height / uiScale()); }
+
 	protected CraftNetScreen(String screenId, Text title, NbtCompound initial) {
 		super(title);
 		this.screenId = screenId;
@@ -46,8 +60,8 @@ public abstract class CraftNetScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(Click click, boolean focused) {
-		double mouseX = click.x();
-		double mouseY = click.y();
+		double mouseX = click.x() / uiScale();
+		double mouseY = click.y() / uiScale();
 		for (UiKit.TextInput in : inputs) {
 			if (in.mouseDown(mouseX, mouseY)) return true;
 		}
@@ -112,7 +126,7 @@ public abstract class CraftNetScreen extends Screen {
 	/** L4/UX: колесо мыши листает списки — экраны реализуют onScroll. */
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-		if (verticalAmount != 0 && onScroll(mouseX, mouseY, verticalAmount)) return true;
+		if (verticalAmount != 0 && onScroll(mouseX / uiScale(), mouseY / uiScale(), verticalAmount)) return true;
 		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
 	}
 
@@ -134,12 +148,19 @@ public abstract class CraftNetScreen extends Screen {
 	@Override
 	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
 		regions.clear();
-		// super.render рисует фон (наш renderBackground) и виджеты, затем — наш контент
+		// Background remains in physical screen coordinates; CraftNet content uses
+		// a logical canvas and uniformly scales down on small GUI resolutions.
 		super.render(context, mouseX, mouseY, delta);
-		renderContent(context, mouseX, mouseY, delta);
+		float scale = uiScale();
+		context.getMatrices().pushMatrix();
+		context.getMatrices().scale(scale, scale);
+		int logicalMouseX = (int) Math.floor(mouseX / scale);
+		int logicalMouseY = (int) Math.floor(mouseY / scale);
+		renderContent(context, logicalMouseX, logicalMouseY, delta);
 		for (UiKit.TextInput in : inputs) {
 			in.render(context, this.textRenderer);
 		}
+		context.getMatrices().popMatrix();
 	}
 
 	protected abstract void renderContent(DrawContext ctx, int mouseX, int mouseY, float delta);

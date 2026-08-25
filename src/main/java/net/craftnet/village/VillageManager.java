@@ -58,14 +58,24 @@ public final class VillageManager {
 	public static final String[] LVL_NAMES = {
 			"Базовый комплект", "Усилитель", "Фазированная решётка",
 			"Дальнобойная мачта", "Умная вышка"};
-	/** Цена перехода i → i+1 (i = 0..LVL_MAX-1), CR. */
-	public static final int[] UPGRADE_COSTS = {500, 1500, 4000, 9000};
+	/** Reload-safe price of transition level -> level+1. */
+	public static int upgradeCost(int level) {
+		var cfg = net.craftnet.config.CraftNetConfig.get();
+		return switch (Math.max(0, Math.min(LVL_MAX - 1, level))) {
+			case 0 -> cfg.towerUpgradeCost1;
+			case 1 -> cfg.towerUpgradeCost2;
+			case 2 -> cfg.towerUpgradeCost3;
+			default -> cfg.towerUpgradeCost4;
+		};
+	}
 	/** Множитель радиусов по уровню. */
 	public static final double[] RADIUS_MULT = {1.0, 1.35, 1.75, 2.25, 2.75};
 	/** На сколько тиров быстрее доставка (вычитается из множителя времени). */
 	public static final int[] LOGISTICS_BONUS = {0, 0, 0, 1, 2};
 	/** Скидка магазина при ур.4 (доля). */
-	public static final double SMART_TOWER_DISCOUNT = net.craftnet.config.CraftNetConfig.get().shopSmartTowerDiscountPct / 100.0;
+	public static double smartTowerDiscount() {
+		return net.craftnet.config.CraftNetConfig.get().shopSmartTowerDiscountPct / 100.0;
+	}
 
 	/** Радиус поиска деревень (в чанках, по уже сгенерированным — быстро). */
 	private static final int LOCATE_RADIUS = 64;
@@ -128,10 +138,32 @@ public final class VillageManager {
 	public record SignalInfo(SignalLevel level, String villageName, int distance,
 			boolean offlineVillage, int towerLevel, int vx, int vy, int vz) {}
 
+	/** A delivery destination is a real village with a successfully placed PVZ, never a manual cell site. */
+	public record DeliveryHub(int x, int y, int z, String name, int distance) {}
+
+	public static Optional<DeliveryHub> nearestDeliveryHub(MinecraftServer server, BlockPos pos) {
+		NbtCompound best = null;
+		double bestD2 = Double.MAX_VALUE;
+		for (NbtCompound village : villages(server)) {
+			if (Nbt2.i(village, "manual") != 0 || Nbt2.i(village, "off") != 0) continue;
+			if ((Nbt2.i(village, "bmask") & 1) == 0) continue; // bit 0 = PVZ
+			double d2 = dist2(village, pos);
+			if (d2 < bestD2) {
+				best = village;
+				bestD2 = d2;
+			}
+		}
+		if (best == null) return Optional.empty();
+		return Optional.of(new DeliveryHub(Nbt2.i(best, "cx"), Nbt2.i(best, "cy"), Nbt2.i(best, "cz"),
+				Nbt2.str(best, "name"), (int) Math.round(Math.sqrt(bestD2))));
+	}
+
 	/** Уровень связи для игрока с учётом уровней вышек. */
 	public static SignalInfo signalFor(ServerPlayerEntity player) {
 		MinecraftServer server = player.getEntityWorld().getServer();
-		if (server == null) return new SignalInfo(SignalLevel.NONE, "", -1, false, 0, 0, 0, 0);
+		if (server == null || player.getEntityWorld() != server.getOverworld()) {
+			return new SignalInfo(SignalLevel.NONE, "", -1, false, 0, 0, 0, 0);
+		}
 		BlockPos pos = player.getBlockPos();
 		SignalLevel best = SignalLevel.NONE;
 		NbtCompound bestV = null;
@@ -175,7 +207,7 @@ public final class VillageManager {
 
 	/** Ценовой множитель магазина («умная вышка» ур.4 даёт −5%). */
 	public static double shopPriceFactor(SignalInfo sig) {
-		return sig.towerLevel() >= LVL_MAX ? 1.0 - SMART_TOWER_DISCOUNT : 1.0;
+		return sig.towerLevel() >= LVL_MAX ? 1.0 - smartTowerDiscount() : 1.0;
 	}
 
 	/** Торговать на бирже можно с 3G, а в покрытии «умной вышки» ур.4 — уже с 2G. */
@@ -204,7 +236,7 @@ public final class VillageManager {
 	 */
 	public static void onChunkLoad(ServerWorld world, WorldChunk chunk) {
 		MinecraftServer server = world.getServer();
-		if (server == null) return;
+		if (server == null || world != server.getOverworld()) return;
 		var starts = chunk.getStructureStarts();
 		if (starts.isEmpty()) return;
 		Registry<net.minecraft.world.gen.structure.Structure> strReg =
@@ -261,16 +293,19 @@ public final class VillageManager {
 		for (String k : map.getKeys()) {
 			NbtCompound v = map.getCompound(k).orElseGet(NbtCompound::new);
 			boolean needTower = Nbt2.i(v, "ty") < 0;
-			boolean needBld = Nbt2.i(v, "bld") == 0 && Nbt2.i(v, "btry") < 30;
+			// bld=2 was the old permanent-failure marker. Treat it as retryable so
+			// worlds broken by v1.1 heal after updating instead of staying dead.
+			boolean needBld = Nbt2.i(v, "manual") == 0 && Nbt2.i(v, "bld") != 1;
 			if (!needTower && !needBld) continue;
 			if (needTower) {
 				ensureTower(server, v);
 				dirty = true;
 			}
-			if (needBld && Nbt2.i(v, "manual") == 0) {
-				v.putInt("btry", Nbt2.i(v, "btry") + 1);
+			if (needBld) {
+				int attempt = Nbt2.i(v, "btry");
+				v.putInt("btry", attempt == Integer.MAX_VALUE ? 1 : attempt + 1);
+				v.putInt("bld", 0);
 				placeVillageBuildings(server, v);
-				if (Nbt2.i(v, "btry") >= 30) v.putInt("bld", 2); // сдались: что встало, то встало
 				dirty = true;
 			}
 			map.put(k, v);
@@ -344,18 +379,23 @@ public final class VillageManager {
 	 * вместе с блоками. Флаг bld: 0 = ждём, 1 = всё встало, 2 = сдалиcь.
 	 */
 	private static void placeVillageBuildings(MinecraftServer server, NbtCompound v) {
-		if (Nbt2.i(v, "bld") != 0) return;
+		if (Nbt2.i(v, "bld") == 1) return;
 		ServerWorld world = server.getOverworld();
 		if (world == null) return;
 		int cx = Nbt2.i(v, "cx");
 		int cz = Nbt2.i(v, "cz");
 		int doneMask = Nbt2.i(v, "bmask"); // какие здания уже стоят
-		java.util.Random rng = new java.util.Random((cx * 73856093L) ^ (cz * 19349663L));
-		double baseAng = rng.nextDouble() * Math.PI * 2;
+		int buildTry = Math.max(0, Nbt2.i(v, "btry"));
 		boolean anyProgress = false;
 
 		for (int i = 0; i < BUILDING_IDS.length; i++) {
 			if ((doneMask & (1 << i)) != 0) continue;
+			// Each building and retry has an independent deterministic stream. A
+			// failed terrain probe must not repeat the same ten candidates forever.
+			long seed = (cx * 73856093L) ^ (cz * 19349663L)
+					^ (i * 83492791L) ^ (buildTry * 0x9E3779B97F4A7C15L);
+			java.util.Random rng = new java.util.Random(seed);
+			double baseAng = rng.nextDouble() * Math.PI * 2;
 			Optional<StructureTemplate> tplOpt = world.getStructureTemplateManager()
 					.getTemplate(Identifier.of(BUILDING_IDS[i]));
 			if (tplOpt.isEmpty()) {
@@ -384,13 +424,25 @@ public final class VillageManager {
 				StructurePlacementData data = new StructurePlacementData().setRotation(rot);
 				BlockPos corner = computeCorner(sx, sz, x, y, z, rot);
 				try {
-					tpl.place(world, corner, corner, data, world.getRandom(), Block.NOTIFY_LISTENERS);
+					boolean placed = tpl.place(world, corner, corner, data,
+							world.getRandom(), Block.NOTIFY_LISTENERS);
+					if (!placed) {
+						net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Шаблон {} вернул false @ {} (попытка {})",
+								BUILDING_IDS[i], corner.toShortString(), buildTry);
+						continue;
+					}
+					// Pool generation replaces connector jigsaws through its processor;
+					// direct fallback placement does not, so remove only our connector.
+					clearJigsaws(world, x, y, z, w, tpl.getSize().getY(), d);
 					doneMask |= 1 << i;
 					placedHere = true;
 					anyProgress = true;
-				} catch (Throwable t) {
-					net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Не встало здание {}: {}",
-							BUILDING_IDS[i], t.toString());
+					v.putInt("b" + i + "x", x);
+					v.putInt("b" + i + "y", y);
+					v.putInt("b" + i + "z", z);
+				} catch (RuntimeException t) {
+					net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Не встало здание " + BUILDING_IDS[i]
+							+ " @ " + corner.toShortString() + " (попытка " + buildTry + ")", t);
 				}
 			}
 		}
@@ -402,6 +454,19 @@ public final class VillageManager {
 		} else if (anyProgress) {
 			net.craftnet.CraftNet.LOGGER.info("[CraftNet] Здания частично: {} (маска {})",
 					Nbt2.str(v, "name"), doneMask);
+		}
+	}
+
+	private static void clearJigsaws(ServerWorld world, int x, int y, int z, int w, int h, int d) {
+		for (int dx = 0; dx < w; dx++) {
+			for (int dz = 0; dz < d; dz++) {
+				for (int dy = 0; dy < h; dy++) {
+					BlockPos pos = new BlockPos(x + dx, y + dy, z + dz);
+					if (world.getBlockState(pos).isOf(Blocks.JIGSAW)) {
+						world.setBlockState(pos, Blocks.AIR.getDefaultState(), Block.NOTIFY_LISTENERS);
+					}
+				}
+			}
 		}
 	}
 
@@ -428,7 +493,6 @@ public final class VillageManager {
 	private static int flatFootprintY(ServerWorld world, int x, int z, int w, int d) {
 		int min = Integer.MAX_VALUE;
 		int max = Integer.MIN_VALUE;
-		int cy = -1;
 		for (int ix = 0; ix < 3; ix++) {
 			for (int iz = 0; iz < 3; iz++) {
 				int px = ix == 0 ? x : ix == 1 ? x + (w - 1) / 2 : x + w - 1;
@@ -436,13 +500,14 @@ public final class VillageManager {
 				if (!world.isChunkLoaded(px >> 4, pz >> 4)) return -1;
 				int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, px, pz);
 				if (y <= world.getBottomY() + 1) return -1;
-				if (ix == 1 && iz == 1) cy = y;
 				min = Math.min(min, y);
 				max = Math.max(max, y);
 			}
 		}
 		if (max - min > 2) return -1;
-		return cy;
+		// Place at the highest sampled surface; generated air clears vegetation,
+		// while no part of the floor is buried below a local ridge.
+		return max;
 	}
 
 	/** Построить вышку на кольце от центра, если её нет. */
@@ -518,6 +583,7 @@ public final class VillageManager {
 
 	public static void onTowerCorePlaced(ServerWorld world, BlockPos pos) {
 		MinecraftServer server = world.getServer();
+		if (world != server.getOverworld()) return;
 		// рядом с известной деревней → подключить её
 		Optional<NbtCompound> near = nearest(server, pos, false);
 		if (near.isPresent() && dist2(near.get(), pos) < 96 * 96) {
@@ -563,6 +629,7 @@ public final class VillageManager {
 
 	public static void onTowerCoreBroken(ServerWorld world, BlockPos pos) {
 		MinecraftServer server = world.getServer();
+		if (world != server.getOverworld()) return;
 		VillageState st = state(server);
 		NbtCompound map = Nbt2.sub(st.data(), "villages");
 		boolean dirty = false;
@@ -623,7 +690,7 @@ public final class VillageManager {
 			player.sendMessage(Text.translatable("craftnet.tower.max"), false);
 			return;
 		}
-		int cost = UPGRADE_COSTS[tlv];
+		int cost = upgradeCost(tlv);
 		if (!MoneyManager.tryCharge(server, player.getUuid(), cost, "апгрейд вышки")) {
 			player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
 			return;
@@ -767,7 +834,7 @@ public final class VillageManager {
 			row.putInt("r4", scaledRadius(R4G, l));
 			row.putInt("r3", scaledRadius(R3G, l));
 			row.putInt("r2", scaledRadius(R2G, l));
-			row.putInt("cost", l == 0 ? 0 : UPGRADE_COSTS[l - 1]);
+			row.putInt("cost", l == 0 ? 0 : upgradeCost(l - 1));
 			row.putInt("logi", LOGISTICS_BONUS[l]);
 			String perk = switch (l) {
 				case 0 -> "базовое покрытие";

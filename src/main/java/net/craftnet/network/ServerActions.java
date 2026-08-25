@@ -24,6 +24,7 @@ import org.jetbrains.annotations.Nullable;
 import net.craftnet.econ.CasinoManager;
 import net.craftnet.econ.MarketManager;
 import net.craftnet.util.Nbt2;
+import net.craftnet.util.StackOps;
 import net.craftnet.econ.MoneyManager;
 import net.craftnet.econ.PriceManager;
 import net.craftnet.econ.StocksManager;
@@ -41,8 +42,9 @@ import net.craftnet.village.VillageManager;
 public final class ServerActions {
 	private ServerActions() {}
 
-	private record OpenCtx(String screen, long station, String shopQ, int shopPage, int marketPage,
-			String marketQ, String casinoQ, int casinoPage) {}
+	private record OpenCtx(String screen, long station, String dimension,
+			String shopQ, int shopPage, int marketPage, String marketQ,
+			String casinoQ, int casinoPage) {}
 
 	private static final Map<UUID, OpenCtx> OPEN = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -61,7 +63,9 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.phone.missing"), true);
 			return;
 		}
-		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0, 0, "", "", 0));
+		String dimension = player.getEntityWorld().getRegistryKey().getValue().toString();
+		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(),
+				dimension, "", 0, 0, "", "", 0));
 		ServerPlayNetworking.send(player, new ModPackets.OpenScreenS2CPayload(screen, buildSync(player, screen)));
 	}
 
@@ -81,7 +85,17 @@ public final class ServerActions {
 	private static boolean nearStation(ServerPlayerEntity player, double maxDist) {
 		OpenCtx ctx = OPEN.get(player.getUuid());
 		if (ctx == null || ctx.station() == 0L) return false;
+		String dimension = player.getEntityWorld().getRegistryKey().getValue().toString();
+		if (!dimension.equals(ctx.dimension())) return false;
 		return BlockPos.fromLong(ctx.station()).getSquaredDistance(player.getBlockPos()) <= maxDist * maxDist;
+	}
+
+	/** Immediate authoritative refresh used by delayed transactions such as casino reveal. */
+	public static void syncNow(ServerPlayerEntity player) {
+		OpenCtx ctx = OPEN.get(player.getUuid());
+		if (ctx == null) return;
+		ServerPlayNetworking.send(player,
+				new ModPackets.ScreenSyncS2CPayload(ctx.screen(), buildSync(player, ctx.screen())));
 	}
 
 	/** Периодическая пересинхронизация открытых экранов (интервал — из конфига). */
@@ -149,6 +163,15 @@ public final class ServerActions {
 					openScreen(player, "phone", null);
 				}
 				default -> {
+					// Never route by a client-claimed screen. It must match the context
+					// opened server-side by the phone item, station block, or staff NPC.
+					OpenCtx authenticated = OPEN.get(player.getUuid());
+					if (authenticated == null || !authenticated.screen().equals(screen)) {
+						net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Отклонено действие {}:{} от {}: активный экран {}",
+								screen, action, player.getName().getString(),
+								authenticated == null ? "none" : authenticated.screen());
+						return;
+					}
 					// анти-макрос: не чаще одного действия за 2 тика (0.1 с) на игрока;
 					// после рестарта сервера (отрицательная разница) — пропускаем
 					MinecraftServer srv = player.getEntityWorld().getServer();
@@ -190,7 +213,7 @@ public final class ServerActions {
 		switch (action) {
 			case "query_shop" -> {
 				if (ctx != null) {
-					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(),
+					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.dimension(),
 							args.getString("q", ""), Math.max(0, args.getInt("page", 0)), ctx.marketPage(), ctx.marketQ(), ctx.casinoQ(), ctx.casinoPage()));
 				}
 			}
@@ -198,7 +221,7 @@ public final class ServerActions {
 			case "buy_batch" -> phoneBuyBatch(player, args);
 			case "market_query" -> {
 				if (ctx != null) {
-					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
+					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.dimension(), ctx.shopQ(),
 							ctx.shopPage(), Math.max(0, args.getInt("page", 0)),
 							args.getString("q", ctx.marketQ()), ctx.casinoQ(), ctx.casinoPage()));
 				}
@@ -206,36 +229,30 @@ public final class ServerActions {
 			case "market_buy" -> marketBuy(player, args);
 			case "casino_query" -> {
 				if (ctx != null) {
-					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
+					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.dimension(), ctx.shopQ(),
 							ctx.shopPage(), ctx.marketPage(), ctx.marketQ(),
 							args.getString("q", ""), Math.max(0, args.getInt("page", 0))));
 				}
 			}
 			case "casino_stake" -> {
-				int rc2 = CasinoManager.addStake(server, player, args.getString("id", ""),
-						args.getInt("count", 1));
-				switch (rc2) {
-					case 2 -> player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
-					case 3 -> player.sendMessage(Text.translatable("craftnet.casino.full"), true);
-					default -> { }
-				}
+				int rc2 = CasinoManager.addStake(server, player,
+						args.getInt("slot", -1), Nbt2.sub(args, "stack"), args.getInt("count", 1));
+				sendStakeError(player, rc2);
 			}
 			case "casino_stake_multi" -> {
-				// пакетный добор ставки (чипы x2/30%…): одно действие — много позиций
+				// One packet for an auto-fill chip; every row still names an exact slot+stack.
 				int worst = 0;
 				for (var el : args.getListOrEmpty("items")) {
 					if (!(el instanceof NbtCompound it)) continue;
 					int rc3 = CasinoManager.addStake(server, player,
-							it.getString("id", ""), it.getInt("count", 1));
+							it.getInt("slot", -1), Nbt2.sub(it, "stack"), it.getInt("count", 1));
 					if (rc3 > worst) worst = rc3;
 				}
-				switch (worst) {
-					case 2 -> player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
-					case 3 -> player.sendMessage(Text.translatable("craftnet.casino.full"), true);
-					default -> { }
-				}
+				sendStakeError(player, worst);
 			}
 			case "casino_clear" -> CasinoManager.clearPool(server, player);
+			case "casino_unstake" -> CasinoManager.removeStake(server, player,
+					Nbt2.sub(args, "stack"), args.getInt("count", 1));
 			case "casino_spin" -> {
 				int rc = CasinoManager.spin(server, player, args.getString("target", ""));
 				switch (rc) {
@@ -243,9 +260,13 @@ public final class ServerActions {
 							Text.translatable("craftnet.casino.no_stake"), true);
 					case CasinoManager.SPIN_BAD_TARGET -> player.sendMessage(
 							Text.translatable("craftnet.casino.bad_target"), true);
-					case CasinoManager.SPIN_LOW -> player.sendMessage(
-							Text.translatable("craftnet.casino.low_chance"), true);
-					default -> { }
+				case CasinoManager.SPIN_LOW -> player.sendMessage(
+						Text.translatable("craftnet.casino.low_chance"), true);
+				case CasinoManager.SPIN_PENDING -> player.sendMessage(
+						Text.translatable("craftnet.casino.pending"), true);
+				case CasinoManager.SPIN_OVERBET -> player.sendMessage(
+						Text.translatable("craftnet.casino.overbet"), true);
+				default -> { }
 				}
 			}
 			case "stock_buy" -> stockOp(player, args, true);
@@ -279,6 +300,18 @@ public final class ServerActions {
 		}
 	}
 
+	private static void sendStakeError(ServerPlayerEntity player, int code) {
+		switch (code) {
+			case CasinoManager.ADD_TOO_MANY_KINDS ->
+					player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
+			case CasinoManager.ADD_FULL ->
+					player.sendMessage(Text.translatable("craftnet.casino.full"), true);
+			case CasinoManager.ADD_COMPLEX_STACK ->
+					player.sendMessage(Text.translatable("craftnet.casino.complex"), true);
+			default -> { }
+		}
+	}
+
 	private static void phoneBuy(ServerPlayerEntity player, NbtCompound args) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
@@ -286,7 +319,7 @@ public final class ServerActions {
 		int count = args.getInt("count", 1);
 		if (count <= 0 || count > 640) return;
 		Item item = Registries.ITEM.get(Identifier.tryParse(id));
-		if (item == null || !PriceManager.tradeable(id)) {
+		if (item == null || !PriceManager.buyable(id)) {
 			player.sendMessage(Text.translatable("craftnet.shop.unavailable"), false);
 			return;
 		}
@@ -295,6 +328,12 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
 			return;
 		}
+		var hubOpt = VillageManager.nearestDeliveryHub(server, player.getBlockPos());
+		if (hubOpt.isEmpty()) {
+			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
+			return;
+		}
+		VillageManager.DeliveryHub hub = hubOpt.get();
 		// «умная вышка» ур.4: −5% всем покрытым абонентам
 		long price = Math.round(PriceManager.buyPrice(id) * count * VillageManager.shopPriceFactor(sig));
 		if (!MoneyManager.tryCharge(server, player.getUuid(), price, "магазин")) {
@@ -302,17 +341,17 @@ public final class ServerActions {
 			return;
 		}
 		// обслуживающая деревня — точка доставки; логистика ур.3-4 ускоряет путь
-		int dist = sig.distance();
+		int dist = hub.distance();
 		long ready = server.getOverworld().getTime()
-				+ (long) OrderManager.BASE_TRAVEL_TICKS * VillageManager.travelMultiplier(sig)
+				+ (long) OrderManager.baseTravelTicks() * VillageManager.travelMultiplier(sig)
 				+ dist;
 		ItemStack stack = new ItemStack(item, count);
 		OrderManager.newDelivery(server, player.getUuid(), stack,
-				sig.vx(), sig.vy(), sig.vz(), sig.villageName(), ready);
+				hub.x(), hub.y(), hub.z(), hub.name(), ready);
 		StatsManager.bump(server, player.getUuid(), StatsManager.ORDERS_BOUGHT, 1);
 		StatsManager.addXp(server, player.getUuid(), 3);
 		player.sendMessage(Text.translatable("craftnet.shop.ordered",
-				count, stack.getName().getString(), sig.villageName(),
+				count, stack.getName().getString(), hub.name(),
 				Math.max(1, (ready - server.getOverworld().getTime()) / 20)), false);
 	}
 
@@ -329,6 +368,12 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
 			return;
 		}
+		var hubOpt = VillageManager.nearestDeliveryHub(server, player.getBlockPos());
+		if (hubOpt.isEmpty()) {
+			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
+			return;
+		}
+		VillageManager.DeliveryHub hub = hubOpt.get();
 		var lines = args.getListOrEmpty("items");
 		if (lines.isEmpty()) return;
 		if (lines.size() > 8) {
@@ -344,7 +389,7 @@ public final class ServerActions {
 			int count = e.getInt("count", 1);
 			if (count <= 0 || count > 640) return;
 			Item item = Registries.ITEM.get(Identifier.tryParse(id));
-			if (item == null || !PriceManager.tradeable(id)) {
+			if (item == null || !PriceManager.buyable(id)) {
 				player.sendMessage(Text.translatable("craftnet.shop.unavailable"), false);
 				return;
 			}
@@ -355,18 +400,18 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
 			return;
 		}
-		int dist = sig.distance();
+		int dist = hub.distance();
 		long ready = server.getOverworld().getTime()
-				+ (long) OrderManager.BASE_TRAVEL_TICKS * VillageManager.travelMultiplier(sig)
+				+ (long) OrderManager.baseTravelTicks() * VillageManager.travelMultiplier(sig)
 				+ dist;
 		for (ItemStack stack : stacks) {
 			OrderManager.newDelivery(server, player.getUuid(), stack,
-					sig.vx(), sig.vy(), sig.vz(), sig.villageName(), ready);
+					hub.x(), hub.y(), hub.z(), hub.name(), ready);
 		}
 		StatsManager.bump(server, player.getUuid(), StatsManager.ORDERS_BOUGHT, 1);
 		StatsManager.addXp(server, player.getUuid(), 3);
 		player.sendMessage(Text.translatable("craftnet.shop.ordered_batch",
-				stacks.size(), total, sig.villageName(),
+				stacks.size(), total, hub.name(),
 				Math.max(1, (ready - server.getOverworld().getTime()) / 20)), false);
 	}
 
@@ -380,14 +425,20 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
 			return;
 		}
-		int dist = sig.distance();
+		var hubOpt = VillageManager.nearestDeliveryHub(server, player.getBlockPos());
+		if (hubOpt.isEmpty()) {
+			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
+			return;
+		}
+		VillageManager.DeliveryHub hub = hubOpt.get();
+		int dist = hub.distance();
 		long ready = server.getOverworld().getTime()
-				+ (long) OrderManager.BASE_TRAVEL_TICKS * VillageManager.travelMultiplier(sig) + dist;
+				+ (long) OrderManager.baseTravelTicks() * VillageManager.travelMultiplier(sig) + dist;
 		int code = MarketManager.buy(server, player, lid,
-				sig.vx(), sig.vy(), sig.vz(), sig.villageName(), ready);
+				hub.x(), hub.y(), hub.z(), hub.name(), ready);
 		switch (code) {
 			case MarketManager.BUY_OK -> player.sendMessage(Text.translatable("craftnet.market.bought",
-					sig.villageName()), false);
+					hub.name()), false);
 			case MarketManager.BUY_GONE -> player.sendMessage(Text.translatable("craftnet.market.gone"), false);
 			case MarketManager.BUY_OWN -> player.sendMessage(Text.translatable("craftnet.market.own"), false);
 			default -> player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
@@ -453,48 +504,52 @@ public final class ServerActions {
 				player.sendMessage(Text.translatable("craftnet.pvz.claimed_n", got), false);
 			}
 			case "sell" -> {
-				String id = args.getString("id", "");
+				int slot = args.getInt("slot", -1);
 				int count = args.getInt("count", 1);
-				Item item = Registries.ITEM.get(Identifier.tryParse(id));
-				// sellPrice 0 = предмет не принимается (хлам нижней ступени) — и выплата
-				// не создаётся, и в дельту баланса не попадает
-				if (item == null || count <= 0 || PriceManager.sellPrice(id) <= 0) return;
-				// H1: рабочее имущество (◆ материалы цеха/кафе, грузы) продаже не подлежит
-				count = Math.min(count, JobManager.countSellable(player, item));
-				if (count <= 0) return;
-				JobManager.removeSellable(player, item, count);
-				long value = (long) PriceManager.sellPrice(id) * count;
+				if (slot < 0 || slot >= player.getInventory().size() || count <= 0) return;
+				ItemStack current = player.getInventory().getStack(slot);
+				NbtCompound expected = Nbt2.sub(args, "stack");
+				if (current.isEmpty() || JobManager.isJobTagged(current)
+						|| !StackOps.sameIdentity(server, current, expected)) return;
+				if (!StackOps.isPlain(server, current)) {
+					player.sendMessage(Text.translatable("craftnet.pvz.complex"), true);
+					return;
+				}
+				String id = Registries.ITEM.getId(current.getItem()).toString();
+				if (PriceManager.sellPrice(id) <= 0) return;
+				count = Math.min(count, current.getCount());
+				ItemStack sold = StackOps.takeExact(player, server, slot, expected, count);
+				if (sold.isEmpty()) return;
+				long value = (long) PriceManager.sellPrice(id) * sold.getCount();
 				VillageManager.SignalInfo sig = VillageManager.signalFor(player);
 				int mult = VillageManager.travelMultiplier(sig);
 				if (mult <= 0) mult = 3;
-			long now0 = server.getOverworld().getTime();
-			long ready = now0 + (long) OrderManager.BASE_TRAVEL_TICKS * mult;
-			String name = new ItemStack(item).getName().getString();
-			OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + count, ready);
-			StatsManager.bump(server, player.getUuid(), StatsManager.ITEMS_SOLD, count);
-			StatsManager.addXp(server, player.getUuid(), Math.max(1, Math.min(10, value / 100)));
-			long etaSec = (ready - now0) / 20;
-			player.sendMessage(Text.translatable("craftnet.pvz.sold", count, name, value, etaSec), false);
+				long now0 = server.getOverworld().getTime();
+				long ready = now0 + (long) OrderManager.baseTravelTicks() * mult;
+				String name = sold.getName().getString();
+				OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + sold.getCount(), ready);
+				StatsManager.bump(server, player.getUuid(), StatsManager.ITEMS_SOLD, sold.getCount());
+				StatsManager.addXp(server, player.getUuid(), Math.max(1, Math.min(10, value / 100)));
+				long etaSec = (ready - now0) / 20;
+				player.sendMessage(Text.translatable("craftnet.pvz.sold", sold.getCount(), name, value, etaSec), false);
 			}
 			case "market_list" -> {
-				String id = args.getString("id", "");
 				int price = args.getInt("price", 0);
 				int lotCount = Math.max(1, Math.min(64, args.getInt("count", 64)));
-				var near2 = VillageManager.nearest(server, player.getBlockPos(), true);
-				int vx = player.getBlockPos().getX(), vy = 64, vz = player.getBlockPos().getZ();
-				String vname = "ПВЗ";
-				if (near2.isPresent()) {
-					NbtCompound v2 = near2.get();
-					vx = net.craftnet.util.Nbt2.i(v2, "cx");
-					vy = net.craftnet.util.Nbt2.i(v2, "cy");
-					vz = net.craftnet.util.Nbt2.i(v2, "cz");
-					vname = net.craftnet.util.Nbt2.str(v2, "name");
+				int slot = args.getInt("slot", -1);
+				NbtCompound expected = Nbt2.sub(args, "stack");
+				var hubOpt = VillageManager.nearestDeliveryHub(server, player.getBlockPos());
+				if (hubOpt.isEmpty()) {
+					player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
+					return;
 				}
-				int rc = MarketManager.create(server, player, id, lotCount, price, vx, vy, vz, vname);
+				VillageManager.DeliveryHub hub = hubOpt.get();
+				int rc = MarketManager.create(server, player, slot, expected, lotCount, price,
+						hub.x(), hub.y(), hub.z(), hub.name());
 				switch (rc) {
 					case 0 -> player.sendMessage(Text.translatable("craftnet.market.listed"), false);
 					case 1 -> player.sendMessage(
-							Text.translatable("craftnet.market.limit", MarketManager.MAX_PER_PLAYER), false);
+							Text.translatable("craftnet.market.limit", MarketManager.maxPerPlayer()), false);
 					case 3 -> player.sendMessage(Text.translatable("craftnet.market.bad_price"), false);
 					default -> player.sendMessage(Text.translatable("craftnet.market.no_item"), false);
 				}
@@ -687,6 +742,7 @@ public final class ServerActions {
 	}
 
 	private static void fillPhoneSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d) {
+		d.putLong("catalogRev", CATALOG_REV.get());
 		VillageManager.SignalInfo sig = VillageManager.signalFor(player);
 		d.putInt("signal", sig.level().tier);
 		d.putString("village", sig.villageName());
@@ -696,7 +752,7 @@ public final class ServerActions {
 		// скидка «умной вышки» для отображения в магазине (сервер считает точно так же)
 		d.putInt("shopDisc", sig.towerLevel() >= VillageManager.LVL_MAX
 				&& sig.level().tier >= SignalLevel.G2.tier
-				? (int) Math.round(VillageManager.SMART_TOWER_DISCOUNT * 100) : 0);
+				? (int) Math.round(VillageManager.smartTowerDiscount() * 100) : 0);
 
 		// GPS: под землёй без прямого неба спутники не ловят
 		int y = player.getBlockPos().getY();
@@ -741,6 +797,9 @@ public final class ServerActions {
 		d.put("stocks", stocks);
 		d.put("stNews", StocksManager.clientNews(server, 3));
 		d.putLong("stMaxExp", net.craftnet.config.CraftNetConfig.get().stocksMaxExposure);
+		d.putInt("marketFee", (int) Math.round(net.craftnet.config.CraftNetConfig.get().marketFeePct));
+		d.putDouble("bankInterestPct", net.craftnet.config.CraftNetConfig.get().bankInterestPctPerDay);
+		d.putLong("bankInterestMin", net.craftnet.config.CraftNetConfig.get().bankInterestMinBalance);
 
 		// журнал операций (структурный {a,r,at} — клиент красит сумму и время)
 		NbtList tx = new NbtList();
@@ -774,6 +833,14 @@ public final class ServerActions {
 
 	/** Полный каталог строится один раз (реестр статичен), фильтрация — только по строке. */
 	private static volatile List<ShopEntry> SHOP_CACHE;
+	private static final java.util.concurrent.atomic.AtomicLong CATALOG_REV =
+			new java.util.concurrent.atomic.AtomicLong(1);
+
+	/** Called after config/price reload so UI and charged values stay transactional. */
+	public static void invalidateCatalog() {
+		SHOP_CACHE = null;
+		CATALOG_REV.incrementAndGet();
+	}
 
 	private static List<ShopEntry> shopCatalog() {
 		List<ShopEntry> c = SHOP_CACHE;
@@ -784,7 +851,7 @@ public final class ServerActions {
 					List<ShopEntry> all = new ArrayList<>();
 					for (Identifier id : Registries.ITEM.getIds()) {
 						String sid = id.toString();
-						if (!PriceManager.tradeable(sid)) continue;
+						if (!PriceManager.buyable(sid)) continue;
 						Item item = Registries.ITEM.get(id);
 						if (item == null) continue;
 						all.add(new ShopEntry(sid, new ItemStack(item).getName().getString(),
@@ -844,7 +911,7 @@ public final class ServerActions {
 		NbtList presets = new NbtList();
 		for (String pid : CASINO_PRESETS) {
 			int bp = PriceManager.buyPrice(pid);
-			if (!PriceManager.tradeable(pid) || bp <= 0) continue;
+			if (!PriceManager.buyable(pid) || bp <= 0) continue;
 			Item pi = Registries.ITEM.get(Identifier.tryParse(pid));
 			if (pi == null) continue;
 			NbtCompound c = new NbtCompound();
@@ -859,39 +926,34 @@ public final class ServerActions {
 		cz.put("staked", staked);
 		cz.putLong("stakeVal", CasinoManager.poolValue(server, player.getUuid()));
 		// параметры шанса — клиент считает «живой» шанс той же формулой, что и спин
-		cz.putInt("bpMin", CasinoManager.BP_MIN);
-		cz.putInt("bpMax", CasinoManager.BP_MAX);
+		cz.putInt("bpMin", CasinoManager.minChanceBp());
+		cz.putInt("bpMax", CasinoManager.maxChanceBp());
 		cz.putLong("rtpPromille", Math.round(
 				net.craftnet.config.CraftNetConfig.get().casinoRtpPct * 10));
-		// источник ставок: агрегированный инвентарь (только то, что можно оценить), до 12 видов
-		Map<String, int[]> agg = new java.util.LinkedHashMap<>();
-		Map<String, String> names = new java.util.HashMap<>();
+		// Exact per-slot source. Complex stacks are visible but disabled until a
+		// component-aware valuation policy is configured.
 		var inv = player.getInventory();
-		for (int i = 0; i < inv.size(); i++) {
-			ItemStack s2 = inv.getStack(i);
-			if (s2.isEmpty() || JobManager.isJobTagged(s2)) continue;
-			String id = Registries.ITEM.getId(s2.getItem()).toString();
-			if (!PriceManager.tradeable(id)) continue;
-			int price = PriceManager.sellPrice(id);
-			if (price <= 0) continue;
-			agg.computeIfAbsent(id, k -> new int[2]);
-			agg.get(id)[0] += s2.getCount();
-			agg.get(id)[1] = price;
-			names.putIfAbsent(id, s2.getName().getString());
-		}
 		NbtList src = new NbtList();
-		int rows = 0;
-		for (Map.Entry<String, int[]> e : agg.entrySet()) {
-			if (rows++ >= 12) break;
-			NbtCompound c = new NbtCompound();
-			c.putString("id", e.getKey());
-			c.putString("name", names.get(e.getKey()));
-			c.putInt("count", e.getValue()[0]);
-			c.putInt("price", e.getValue()[1]);
-			src.add(c);
+		for (int slot = 0; slot < inv.size() && src.size() < 36; slot++) {
+			ItemStack stack = inv.getStack(slot);
+			if (stack.isEmpty() || JobManager.isJobTagged(stack)) continue;
+			String id = Registries.ITEM.getId(stack.getItem()).toString();
+			int price = PriceManager.sellPrice(id);
+			if (!PriceManager.tradeable(id) || price <= 0) continue;
+			NbtCompound row = new NbtCompound();
+			row.putInt("slot", slot);
+			row.putString("id", id);
+			row.putString("name", stack.getName().getString());
+			row.putInt("count", stack.getCount());
+			row.putInt("price", price);
+			row.putInt("plain", StackOps.isPlain(server, stack) ? 1 : 0);
+			row.put("stack", StackOps.identity(server, stack));
+			src.add(row);
 		}
 		cz.put("src", src);
 		cz.put("targets", buildShopPage(casinoQ, casinoPage));
+		NbtCompound pending = CasinoManager.pendingSpinView(server, player.getUuid());
+		if (!pending.isEmpty()) cz.put("pending", pending);
 		NbtCompound last = CasinoManager.lastSpinView(server, player.getUuid());
 		if (!last.isEmpty()) cz.put("last", last);
 		return cz;
@@ -956,32 +1018,25 @@ public final class ServerActions {
 		d.put("payouts", pays);
 		d.putLong("payoutSum", sum);
 
-		// продажа: агрегация инвентаря по предмету (без ◆-рабочего имущества)
-		Map<String, int[]> agg = new java.util.LinkedHashMap<>();
-		Map<String, String> names = new java.util.HashMap<>();
+		// Exact per-slot rows. Aggregating by registry id can silently sell the
+		// wrong enchanted/damaged/container stack when two variants share an item.
 		var inv = player.getInventory();
-		for (int i = 0; i < inv.size(); i++) {
-			ItemStack s = inv.getStack(i);
-			if (s.isEmpty() || JobManager.isJobTagged(s)) continue;
-			String id = Registries.ITEM.getId(s.getItem()).toString();
-			if (!PriceManager.tradeable(id)) continue;
-			int price = PriceManager.sellPrice(id);
-			if (price <= 0) continue;
-			agg.computeIfAbsent(id, k -> new int[2]);
-			agg.get(id)[0] += s.getCount();
-			agg.get(id)[1] = price;
-			names.putIfAbsent(id, s.getName().getString());
-		}
 		NbtList sell = new NbtList();
-		int rows = 0;
-		for (Map.Entry<String, int[]> e : agg.entrySet()) {
-			if (rows++ >= 24) break;
-			NbtCompound c = new NbtCompound();
-			c.putString("id", e.getKey());
-			c.putString("name", names.get(e.getKey()));
-			c.putInt("count", e.getValue()[0]);
-			c.putInt("price", e.getValue()[1]);
-			sell.add(c);
+		for (int slot = 0; slot < inv.size() && sell.size() < 36; slot++) {
+			ItemStack stack = inv.getStack(slot);
+			if (stack.isEmpty() || JobManager.isJobTagged(stack)) continue;
+			String id = Registries.ITEM.getId(stack.getItem()).toString();
+			int price = PriceManager.sellPrice(id);
+			if (!PriceManager.tradeable(id) || price <= 0) continue;
+			NbtCompound row = new NbtCompound();
+			row.putInt("slot", slot);
+			row.putString("id", id);
+			row.putString("name", stack.getName().getString());
+			row.putInt("count", stack.getCount());
+			row.putInt("price", price);
+			row.putInt("plain", StackOps.isPlain(server, stack) ? 1 : 0);
+			row.put("stack", StackOps.identity(server, stack));
+			sell.add(row);
 		}
 		d.put("sell", sell);
 

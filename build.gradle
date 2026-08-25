@@ -31,6 +31,25 @@ tasks.withType(JavaCompile).configureEach {
 	it.options.release = 21
 }
 
+// Regression audits are part of `check`, not an optional manual ritual. They
+// parse the same config/price/job sources used by the mod and fail CI on drift.
+tasks.register('auditCraftNet', Exec) {
+	workingDir project.projectDir
+	commandLine 'bash', '-c', '''
+		set -euo pipefail
+		python3 tools/gen_structures.py
+		python3 tools/audit_lang.py
+		python3 tools/audit_meta.py
+		python3 tools/audit_prices.py
+		python3 tools/audit_econ_flows.py
+		python3 tools/simulate_jobs.py
+	'''
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('auditCraftNet')
+}
+
 java {
 	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
 	// if it is present.

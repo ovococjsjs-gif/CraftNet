@@ -31,12 +31,15 @@ public class JobScreen extends CraftNetScreen {
 		return screenId.equals("job:cafe");
 	}
 
+	@Override protected int designWidth() { return PW + 16; }
+	@Override protected int designHeight() { return PH + 28; }
+
 	private int px() {
-		return (width - PW) / 2;
+		return (canvasWidth() - PW) / 2;
 	}
 
 	private int py() {
-		return (height - PH) / 2;
+		return (canvasHeight() - PH) / 2;
 	}
 
 	@Override
@@ -60,7 +63,7 @@ public class JobScreen extends CraftNetScreen {
 					"Курьер · доставка пакетов", "courier", mx, my);
 		} else {
 			renderOffer(ctx, x + 8, y + 18, PW - 16, 92, sub(data, "offerFactoryOrder"),
-					"Цеховой заказ · крафт из выданных материалов", "factory_order", mx, my);
+					"Цеховой заказ · свои материалы + оплата", "factory_order", mx, my);
 			renderOffer(ctx, x + 8, y + 116, PW - 16, 92, sub(data, "offerFactory"),
 					"Сборка по схеме · мини-игра", "factory", mx, my);
 		}
@@ -206,7 +209,7 @@ public class JobScreen extends CraftNetScreen {
 			ry += 24;
 		}
 		// выданные ◆материалы (справочно)
-		UiKit.label(ctx, textRenderer, x + 10, ry + 2, "выдано со склада:", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 10, ry + 2, "расчёт материалов заказа:", UiKit.COL_TEXT_DIM);
 		ry += 12;
 		int ix = x + 10;
 		for (NbtCompound m : rows(jd, "mats")) {
@@ -329,7 +332,7 @@ public class JobScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 10, ly, "сдать: " + trim(sb.toString(), 42), UiKit.COL_TEXT);
 			ly += 11;
 			long matsValue = lng(offer, "matsValue");
-			UiKit.label(ctx, textRenderer, x + 10, ly, "материалы выдаст склад ◆"
+			UiKit.label(ctx, textRenderer, x + 10, ly, "материалы игрока учтены в оплате"
 					+ (matsValue > 0 ? " (≈" + matsValue + " CR)" : ""), UiKit.COL_TEXT_DIM);
 			ly += 11;
 		}

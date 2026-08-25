@@ -127,6 +127,7 @@ public final class AdminCommands {
 						.executes(ctx -> {
 							net.craftnet.config.CraftNetConfig.load();
 							net.craftnet.econ.CraftNetPrices.load();
+							net.craftnet.network.ServerActions.invalidateCatalog();
 							ctx.getSource().sendFeedback(() -> Text.literal(
 									"Конфиги перечитаны: craftnet.json, craftnet_prices.json"), false);
 							return 1;

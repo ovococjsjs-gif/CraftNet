@@ -45,6 +45,40 @@ public final class PriceManager {
 
 	private static final Map<String, Integer> TABLE = new HashMap<>();
 
+	/** Items accepted from players/market but deliberately unavailable in the server shop. */
+	private static final java.util.Map<String, String> COMPRESSION_BASE = java.util.Map.ofEntries(
+			java.util.Map.entry("minecraft:coal_block", "minecraft:coal"),
+			java.util.Map.entry("minecraft:iron_block", "minecraft:iron_ingot"),
+			java.util.Map.entry("minecraft:gold_block", "minecraft:gold_ingot"),
+			java.util.Map.entry("minecraft:copper_block", "minecraft:copper_ingot"),
+			java.util.Map.entry("minecraft:redstone_block", "minecraft:redstone"),
+			java.util.Map.entry("minecraft:lapis_block", "minecraft:lapis_lazuli"),
+			java.util.Map.entry("minecraft:emerald_block", "minecraft:emerald"),
+			java.util.Map.entry("minecraft:diamond_block", "minecraft:diamond"),
+			java.util.Map.entry("minecraft:netherite_block", "minecraft:netherite_ingot"),
+			java.util.Map.entry("minecraft:hay_block", "minecraft:wheat"),
+			java.util.Map.entry("minecraft:slime_block", "minecraft:slime_ball"),
+			java.util.Map.entry("minecraft:dried_kelp_block", "minecraft:dried_kelp"),
+			java.util.Map.entry("minecraft:packed_ice", "minecraft:ice"),
+			java.util.Map.entry("minecraft:blue_ice", "minecraft:packed_ice"),
+			java.util.Map.entry("minecraft:raw_iron_block", "minecraft:raw_iron"),
+			java.util.Map.entry("minecraft:raw_gold_block", "minecraft:raw_gold"),
+			java.util.Map.entry("minecraft:raw_copper_block", "minecraft:raw_copper"));
+
+	private static final java.util.Set<String> BUY_DENY = java.util.Set.of(
+			"minecraft:coal_ore", "minecraft:deepslate_coal_ore",
+			"minecraft:iron_ore", "minecraft:deepslate_iron_ore",
+			"minecraft:gold_ore", "minecraft:deepslate_gold_ore",
+			"minecraft:copper_ore", "minecraft:deepslate_copper_ore",
+			"minecraft:redstone_ore", "minecraft:deepslate_redstone_ore",
+			"minecraft:lapis_ore", "minecraft:deepslate_lapis_ore",
+			"minecraft:emerald_ore", "minecraft:deepslate_emerald_ore",
+			"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore",
+			"minecraft:nether_gold_ore", "minecraft:nether_quartz_ore",
+			"minecraft:ancient_debris", "minecraft:elytra", "minecraft:nether_star",
+			"minecraft:enchanted_golden_apple", "minecraft:totem_of_undying",
+			"minecraft:trident", "minecraft:heavy_core");
+
 	static {
 		// ---- руды и ресурсы (сырьё; фармилки обесценены) ----
 		put(Items.COAL, 4); put(Items.CHARCOAL, 4);
@@ -165,22 +199,22 @@ public final class PriceManager {
 		put(Items.TNT, 48);                                      // 5 пороха + 4 песка
 
 		// ---- инструменты и снаряжение: ~0.72× материалов (найденное дешевле сырья) ----
-		put(Items.STONE_SWORD, 5); put(Items.STONE_PICKAXE, 6);
-		put(Items.IRON_SWORD, 15); put(Items.IRON_PICKAXE, 24); put(Items.IRON_AXE, 24);
-		put(Items.IRON_SHOVEL, 9); put(Items.IRON_HOE, 16);
-		put(Items.IRON_HELMET, 38); put(Items.IRON_CHESTPLATE, 60);
-		put(Items.IRON_LEGGINGS, 52); put(Items.IRON_BOOTS, 30);
-		put(Items.GOLDEN_SWORD, 38); put(Items.GOLDEN_PICKAXE, 55);
-		put(Items.GOLDEN_HELMET, 90); put(Items.GOLDEN_CHESTPLATE, 145);
-		put(Items.GOLDEN_LEGGINGS, 126); put(Items.GOLDEN_BOOTS, 72);
-		put(Items.DIAMOND_SWORD, 205); put(Items.DIAMOND_PICKAXE, 305); put(Items.DIAMOND_AXE, 305);
-		put(Items.DIAMOND_SHOVEL, 100); put(Items.DIAMOND_HOE, 200);
-		put(Items.DIAMOND_HELMET, 500); put(Items.DIAMOND_CHESTPLATE, 810);
-		put(Items.DIAMOND_LEGGINGS, 705); put(Items.DIAMOND_BOOTS, 400);
-		put(Items.NETHERITE_SWORD, 1050); put(Items.NETHERITE_PICKAXE, 1300);
-		put(Items.NETHERITE_AXE, 1300); put(Items.NETHERITE_SHOVEL, 1150); put(Items.NETHERITE_HOE, 1150);
-		put(Items.NETHERITE_HELMET, 1275); put(Items.NETHERITE_CHESTPLATE, 1500);
-		put(Items.NETHERITE_LEGGINGS, 1450); put(Items.NETHERITE_BOOTS, 1200);
+		put(Items.STONE_SWORD, 4); put(Items.STONE_PICKAXE, 6);
+		put(Items.IRON_SWORD, 25); put(Items.IRON_PICKAXE, 38); put(Items.IRON_AXE, 38);
+		put(Items.IRON_SHOVEL, 15); put(Items.IRON_HOE, 26);
+		put(Items.IRON_HELMET, 60); put(Items.IRON_CHESTPLATE, 95);
+		put(Items.IRON_LEGGINGS, 85); put(Items.IRON_BOOTS, 50);
+		put(Items.GOLDEN_SWORD, 60); put(Items.GOLDEN_PICKAXE, 90);
+		put(Items.GOLDEN_HELMET, 145); put(Items.GOLDEN_CHESTPLATE, 230);
+		put(Items.GOLDEN_LEGGINGS, 205); put(Items.GOLDEN_BOOTS, 120);
+		put(Items.DIAMOND_SWORD, 300); put(Items.DIAMOND_PICKAXE, 450); put(Items.DIAMOND_AXE, 450);
+		put(Items.DIAMOND_SHOVEL, 160); put(Items.DIAMOND_HOE, 300);
+		put(Items.DIAMOND_HELMET, 750); put(Items.DIAMOND_CHESTPLATE, 1200);
+		put(Items.DIAMOND_LEGGINGS, 1050); put(Items.DIAMOND_BOOTS, 600);
+		put(Items.NETHERITE_SWORD, 1450); put(Items.NETHERITE_PICKAXE, 1600);
+		put(Items.NETHERITE_AXE, 1600); put(Items.NETHERITE_SHOVEL, 1325); put(Items.NETHERITE_HOE, 1450);
+		put(Items.NETHERITE_HELMET, 1850); put(Items.NETHERITE_CHESTPLATE, 2300);
+		put(Items.NETHERITE_LEGGINGS, 2150); put(Items.NETHERITE_BOOTS, 1700);
 		put(Items.MACE, 800);              // core 650 + rod 90 = 740: sell(800)=640 < 740 — антилуп put(Items.TRIDENT, 750);
 		put(Items.BUCKET, 24); put(Items.WATER_BUCKET, 26); put(Items.LAVA_BUCKET, 38);
 		put(Items.SHEARS, 18); put(Items.SHIELD, 12); put(Items.BOW, 18); put(Items.CROSSBOW, 38);
@@ -200,14 +234,14 @@ public final class PriceManager {
 		put(Items.ANVIL, 240);                                   // 31 железо = 310, изнашивается → 240
 		put(Items.CHIPPED_ANVIL, 100);
 		put(Items.ENCHANTING_TABLE, 480); put(Items.BREWING_STAND, 72); put(Items.CAULDRON, 52);
-		put(Items.GRINDSTONE, 7); put(Items.LOOM, 13); put(Items.CARTOGRAPHY_TABLE, 14);
+		put(Items.GRINDSTONE, 6); put(Items.LOOM, 13); put(Items.CARTOGRAPHY_TABLE, 14);
 		put(Items.SMITHING_TABLE, 22); put(Items.STONECUTTER, 15);
 		put(Items.SCAFFOLDING, 3); put(Items.LADDER, 3); put(Items.BELL, 60);
 		put(Items.OAK_SIGN, 3); put(Items.BEEHIVE, 45); put(Items.CAMPFIRE, 14); put(Items.SOUL_CAMPFIRE, 16);
 
 		// ---- транспорт и особое ----
-		put(Items.OAK_BOAT, 8);           // 5 досок: sell(8)=4 < 5 — антилуп put(Items.MINECART, 38); put(Items.WHITE_BED, 28);        // 3 шерсть + 3 доски = 21: sell(28)=19 < 21
-		put(Items.FIREWORK_ROCKET, 4);           // paper+порох = 12 / 3 шт: sell=2 < 4 put(Items.WIND_CHARGE, 20); put(Items.FIRE_CHARGE, 12);
+		put(Items.OAK_BOAT, 7); put(Items.MINECART, 55); put(Items.WHITE_BED, 28);
+		put(Items.FIREWORK_ROCKET, 4); put(Items.WIND_CHARGE, 20); put(Items.FIRE_CHARGE, 12);
 		put(Items.ENDER_CHEST, 340);                             // 8 обсидиана + око — не 150
 		put(Items.ENDER_EYE, 85);                                // жемчуг + порошок + труд
 		put(Items.BEACON, 2500);         // звезда 2000 + стекло + обсидиан = 2111: sell=2000 < 2111                                 // звезда 2000 + стекло + обсидиан
@@ -241,22 +275,9 @@ public final class PriceManager {
 		Integer o = CraftNetPrices.override(itemId);
 		if (o != null) return o;
 		Integer t = TABLE.get(itemId);
-		if (t != null) return t;
-		Item item = Registries.ITEM.get(Identifier.tryParse(itemId));
-		if (item == null) return 0;
-		return heuristic(itemId, item);
-	}
-
-	private static int heuristic(String itemId, Item item) {
-		int rarityBase = switch (item.getDefaultStack().getRarity()) {
-			case UNCOMMON -> 25;
-			case RARE -> 120;
-			case EPIC -> 400;
-			default -> 4;
-		};
-		int stackFactor = Math.max(1, (int) Math.round(64.0 / Math.max(1, item.getDefaultStack().getMaxCount()) * 4));
-		int jitter = Math.abs(itemId.hashCode()) % 5;
-		return Math.max(1, rarityBase + stackFactor + jitter);
+		// Explicit allowlist only. A rarity/max-stack/hash heuristic prices beds,
+		// potions and minecarts almost identically and cannot be economically safe.
+		return t == null ? 0 : t;
 	}
 
 	/**
@@ -265,6 +286,8 @@ public final class PriceManager {
 	 * защита от петли «купить материал → скрафтить → продать с прибылью».
 	 */
 	public static int sellPrice(String itemId) {
+		String base = COMPRESSION_BASE.get(itemId);
+		if (base != null) return Math.multiplyExact(sellPrice(base), 9);
 		int b = buyPrice(itemId);
 		if (b <= 0) return 0;
 		CraftNetConfig cfg = CraftNetConfig.get();
@@ -273,6 +296,12 @@ public final class PriceManager {
 		return Math.max(0, (int) Math.floor(b * ratio));
 	}
 
+	/** Can be bought from the infinite server catalog. Progression loot and ores are market-only. */
+	public static boolean buyable(String itemId) {
+		return buyPrice(itemId) > 0 && !BUY_DENY.contains(itemId);
+	}
+
+	/** Can be valued/listed/sold by players. */
 	public static boolean tradeable(String itemId) {
 		return buyPrice(itemId) > 0;
 	}

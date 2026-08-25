@@ -94,6 +94,7 @@ public class CraftNet implements ModInitializer {
 		ServerTickEvents.END_SERVER_TICK.register(s -> {
 			long tick = s.getTicks();
 			OrderManager.tick(s);
+			net.craftnet.econ.CasinoManager.tick(s);
 			if (tick % 100 == 0) StocksManager.tick(s); // живая биржа: пульс каждые 5 с
 			if (tick % 600 == 300) MoneyManager.maybePayDailyInterest(s);
 			net.craftnet.econ.MarketManager.tick(s);

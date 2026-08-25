@@ -47,8 +47,11 @@ public class PhoneScreen extends CraftNetScreen {
 	private String casinoTargetName = "";
 	private boolean casinoPickMode;
 	private String casinoHint = "";
+	private int casinoInvPage;
 	// рулетка-циферблат
 	private long seenSpinId = -1;
+	private long seenPendingId = -1;
+	private boolean waitingReveal;
 	private long animStartTick = -1;
 	private long animSeed;
 	private boolean animWin;
@@ -70,9 +73,26 @@ public class PhoneScreen extends CraftNetScreen {
 	private float shownBp;
 	private static final int COL_STEP1 = 0xFF7EE787;
 	private static final int COL_STEP2 = 0xFF58A6FF;
+	private long catalogRev = -1;
 
 	public PhoneScreen(NbtCompound data) {
 		super("phone", Text.translatable("craftnet.phone.title"), data);
+		catalogRev = lng(data, "catalogRev");
+	}
+
+	@Override
+	protected void onSync(NbtCompound updated) {
+		long rev = lng(updated, "catalogRev");
+		if (catalogRev >= 0 && rev != catalogRev) {
+			// Prices changed atomically on the server. Never retain a target/cart
+			// whose displayed price belongs to the previous catalog revision.
+			casinoTarget = null;
+			casinoTargetPrice = 0;
+			casinoTargetName = "";
+			cart.clear();
+			armedKey = "";
+		}
+		catalogRev = rev;
 	}
 
 	@Override
@@ -121,12 +141,15 @@ public class PhoneScreen extends CraftNetScreen {
 		clearAndInit();
 	}
 
+	@Override protected int designWidth() { return PW + 16; }
+	@Override protected int designHeight() { return PH + 16; }
+
 	private int px() {
-		return (width - PW) / 2;
+		return (canvasWidth() - PW) / 2;
 	}
 
 	private int py() {
-		return (height - PH) / 2;
+		return (canvasHeight() - PH) / 2;
 	}
 
 	private MinecraftClient mc() {
@@ -463,7 +486,7 @@ public class PhoneScreen extends CraftNetScreen {
 
 	// ------------------------------ Казино-апгрейд ------------------------------
 
-	private static final int ANIM_DUR = 62; // тиков ≈ 3.1 сек
+	private static final int ANIM_DUR = 72; // commit → free spin → authoritative reveal
 
 	private void renderCasino(DrawContext ctx, int x, int y, int mx, int my) {
 		if (i(data, "signal") < 1) {
@@ -477,28 +500,42 @@ public class PhoneScreen extends CraftNetScreen {
 		NbtCompound cz = sub(data, "casino");
 		var staked = rows(cz, "staked");
 		long stakeVal = lng(cz, "stakeVal");
+		NbtCompound pending = sub(cz, "pending");
+		long pendingId = lng(pending, "id");
 		NbtCompound last = sub(cz, "last");
 		long lastId = lng(last, "id");
 
-		// детектор нового спина
+		// Commit phase starts the dial without revealing win/lose.
 		long now = mc() != null && mc().world != null ? mc().world.getTime() : 0;
+		if (pendingId > 0 && pendingId != seenPendingId) {
+			seenPendingId = pendingId;
+			animStartTick = now;
+			animSeed = pendingId;
+			animBp = i(pending, "bp");
+			animTargetId = str(pending, "target");
+			animTargetName = str(pending, "tname");
+			animStakeIconId = str(pending, "sicon");
+			animEndPlayed = false;
+			animAngleFrom = normAngle(animFinalAngle);
+			animLastMark = -1;
+			waitingReveal = true;
+		}
 		if (lastId > 0) {
-			if (seenSpinId < 0) {
-				seenSpinId = lastId; // первичная синхронизация — без анимации
+			if (seenSpinId < 0 && lastId != seenPendingId) {
+				seenSpinId = lastId; // historic result on first open — no replay
 			} else if (lastId > seenSpinId) {
 				seenSpinId = lastId;
-				animStartTick = now;
-				animSeed = lastId;
 				animWin = i(last, "win") == 1;
 				animBp = i(last, "bp");
 				animTargetId = str(last, "target");
 				animTargetName = str(last, "tname");
 				animStakeIconId = str(last, "sicon");
-				animEndPlayed = false;
-				animAngleFrom = normAngle(animFinalAngle);
 				animFinalAngle = finalAngleFor(lastId, animWin, animBp);
-				animLastMark = -1;
-				// дальнейшее отрисовывает циферблат
+				if (!waitingReveal || seenPendingId != lastId) animStartTick = now;
+				// Always leave a visible settling phase after the authoritative reveal.
+				if (now - animStartTick > ANIM_DUR - 16) animStartTick = now - (ANIM_DUR - 16);
+				waitingReveal = false;
+				animEndPlayed = false;
 			}
 		}
 
@@ -506,9 +543,10 @@ public class PhoneScreen extends CraftNetScreen {
 		// текущий «живой» шанс от ставки (та же формула, что у серверного спина:
 		// stake/цель × RTP); после спина (ставка сгорела) держим дугу прошлого
 		long rtpPrm = lng(cz, "rtpPromille") > 0 ? lng(cz, "rtpPromille") : 1000;
-		long liveBp = stakeVal > 0 && casinoTargetPrice > 0
-				? Math.min(i(cz, "bpMax") > 0 ? i(cz, "bpMax") : 9500,
-						stakeVal * 10000 * rtpPrm / 1000 / casinoTargetPrice) : 0;
+		long rawBp = stakeVal > 0 && casinoTargetPrice > 0
+				? stakeVal * 10000 * rtpPrm / 1000 / casinoTargetPrice : 0;
+		int bpMax = i(cz, "bpMax") > 0 ? i(cz, "bpMax") : 9500;
+		long liveBp = Math.min(bpMax, rawBp);
 		int arcBp;
 		if (animating || (seenSpinId == lastId && lastId > 0 && stakeVal <= 0)) {
 			arcBp = animBp;
@@ -537,6 +575,14 @@ public class PhoneScreen extends CraftNetScreen {
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), ix, topY + 14);
 			UiKit.label(ctx, textRenderer, ix + 1, topY + 31, "×" + i(e, "count"), UiKit.COL_TEXT_DIM);
+			final NbtCompound expected = sub(e, "stack");
+			final int allCount = i(e, "count");
+			clickable(ix, topY + 14, 18, 26, () -> {
+				NbtCompound a = new NbtCompound();
+				a.put("stack", expected.copy());
+				a.putInt("count", shiftHeld() ? 1 : allCount);
+				send("casino_unstake", a);
+			});
 			ix += 22;
 		}
 		if (staked.isEmpty()) {
@@ -609,11 +655,13 @@ public class PhoneScreen extends CraftNetScreen {
 		// ================= кнопка спина + чипы =================
 		long bp = liveBp;
 		int bpMin = i(cz, "bpMin") > 0 ? i(cz, "bpMin") : 100;
-		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= bpMin;
+		boolean overbet = rawBp > bpMax;
+		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= bpMin && !overbet;
 		int btnY = y + 66;
 		String spinText = animating ? "КРУТИМ…"
 				: staked.isEmpty() ? "← шаг 1: ставка"
 				: casinoTarget == null ? "← шаг 2: цель"
+				: overbet ? "лишняя ставка — уберите"
 				: bp < bpMin ? String.format("ставки < %.1f%% шанса", bpMin / 100.0)
 				: "3. КРУТИТЬ!";
 		UiKit.button(ctx, textRenderer, x + 8, btnY, 130, 18, spinText, mx, my, canSpin && !animating);
@@ -656,19 +704,35 @@ public class PhoneScreen extends CraftNetScreen {
 		int cell = 44;
 		int gridX = x + (PW - cell * 6) / 2;
 		int gridY = y + 104;
-		for (int k = 0; k < Math.min(12, src.size()); k++) {
+		int invPages = Math.max(1, (src.size() + 11) / 12);
+		casinoInvPage = Math.max(0, Math.min(casinoInvPage, invPages - 1));
+		int from = casinoInvPage * 12;
+		for (int k = from; k < Math.min(from + 12, src.size()); k++) {
 			NbtCompound e = src.get(k);
-			int gx = gridX + (k % 6) * cell;
-			int gy = gridY + (k / 6) * 30;
-			UiKit.card(ctx, gx, gy, cell - 4, 28, UiKit.COL_PANEL);
+			int local = k - from;
+			int gx = gridX + (local % 6) * cell;
+			int gy = gridY + (local / 6) * 30;
+			boolean plain = i(e, "plain") == 1;
+			UiKit.card(ctx, gx, gy, cell - 4, 28, plain ? UiKit.COL_PANEL : 0xFF352527);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), gx + 3, gy + 2);
-			UiKit.label(ctx, textRenderer, gx + 21, gy + 3, "×" + i(e, "count"), UiKit.COL_TEXT);
-			UiKit.label(ctx, textRenderer, gx + 21, gy + 12, i(e, "price") + "cr", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, gx + 21, gy + 3, "×" + i(e, "count"), plain ? UiKit.COL_TEXT : UiKit.COL_RED);
+			UiKit.label(ctx, textRenderer, gx + 21, gy + 12, plain ? i(e, "price") + "cr" : "data", UiKit.COL_TEXT_DIM);
 			UiKit.label(ctx, textRenderer, gx + 3, gy + 19, trim(str(e, "name"), 6), UiKit.COL_TEXT_DIM);
-			final String fid = str(e, "id");
-			clickable(gx, gy, cell - 4, 28,
-					() -> stakeAction(fid, shiftHeld() ? 8 : 1));
+			if (plain) {
+				final int slot = i(e, "slot");
+				final NbtCompound expected = sub(e, "stack");
+				clickable(gx, gy, cell - 4, 28,
+						() -> stakeAction(slot, expected, shiftHeld() ? 8 : 1));
+			}
+		}
+		if (invPages > 1) {
+			UiKit.button(ctx, textRenderer, x + PW - 72, y + 89, 14, 12, "<", mx, my, casinoInvPage > 0);
+			UiKit.label(ctx, textRenderer, x + PW - 54, y + 91,
+					(casinoInvPage + 1) + "/" + invPages, UiKit.COL_TEXT_DIM);
+			UiKit.button(ctx, textRenderer, x + PW - 20, y + 89, 14, 12, ">", mx, my, casinoInvPage + 1 < invPages);
+			clickable(x + PW - 72, y + 89, 14, 12, () -> casinoInvPage = Math.max(0, casinoInvPage - 1));
+			clickable(x + PW - 20, y + 89, 14, 12, () -> casinoInvPage = Math.min(invPages - 1, casinoInvPage + 1));
 		}
 
 		// ================= результат / подсказка =================
@@ -711,6 +775,7 @@ public class PhoneScreen extends CraftNetScreen {
 		net.minecraft.nbt.NbtList batch = new net.minecraft.nbt.NbtList();
 		for (NbtCompound e : rows(cz, "src")) {
 			if (addedVal >= extra) break;
+			if (i(e, "plain") != 1) continue;
 			String id = str(e, "id");
 			int price = i(e, "price");
 			if (price <= 0) continue;
@@ -722,7 +787,8 @@ public class PhoneScreen extends CraftNetScreen {
 					Math.ceil((extra - addedVal) / (double) price));
 			if (take <= 0) continue;
 			NbtCompound it = new NbtCompound();
-			it.putString("id", id);
+			it.putInt("slot", i(e, "slot"));
+			it.put("stack", sub(e, "stack").copy());
 			it.putInt("count", take);
 			batch.add(it);
 			poolCnt.put(id, poolCnt.getOrDefault(id, 0) + take);
@@ -789,9 +855,10 @@ public class PhoneScreen extends CraftNetScreen {
 				|| InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_RIGHT_SHIFT);
 	}
 
-	private void stakeAction(String id, int count) {
+	private void stakeAction(int slot, NbtCompound expected, int count) {
 		NbtCompound a = new NbtCompound();
-		a.putString("id", id);
+		a.putInt("slot", slot);
+		a.put("stack", expected.copy());
 		a.putInt("count", count);
 		send("casino_stake", a);
 	}
@@ -862,10 +929,15 @@ public class PhoneScreen extends CraftNetScreen {
 		double angle;
 		if (animating) {
 			double t = Math.min(1.0, (now - animStartTick) / (double) ANIM_DUR);
-			double ease = 1.0 - Math.pow(1.0 - t, 5);
-			double total = 6 * 360.0 + deltaAngle(animAngleFrom, animFinalAngle);
-			angle = animAngleFrom + total * ease;
-			// тиканье каждые ~12° раскрутки
+			if (waitingReveal) {
+				// Commit is known, outcome is not: rotate at full speed without choosing
+				// a win/lose sector. The server reveal supplies the final angle later.
+				angle = animAngleFrom + (now - animStartTick) * 38.0;
+			} else {
+				double ease = 1.0 - Math.pow(1.0 - t, 5);
+				double total = 6 * 360.0 + deltaAngle(animAngleFrom, animFinalAngle);
+				angle = animAngleFrom + total * ease;
+			}
 			int mark = (int) Math.floor(angle / 12.0);
 			if (mark != animLastMark && t < 1.0) {
 				animLastMark = mark;
@@ -963,7 +1035,7 @@ public class PhoneScreen extends CraftNetScreen {
 		var entries = rows(market, "entries");
 		// строка поиска — в init(); под ней сводка
 		UiKit.label(ctx, textRenderer, x + 10, y + 19,
-				"лотов: " + i(market, "total") + " · комиссия 5% у продавца · ★ — лучшая цена",
+				"лотов: " + i(market, "total") + " · комиссия " + i(data, "marketFee") + "% у продавца · ★ — лучшая цена",
 				UiKit.COL_TEXT_DIM);
 		if (entries.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 10, y + 48,
@@ -1125,9 +1197,11 @@ public class PhoneScreen extends CraftNetScreen {
 					delta >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED, false);
 			UiKit.label(ctx, textRenderer, x + 14, ry + 12,
 					String.format(java.util.Locale.ROOT, "%.2f", price) + " CR", UiKit.COL_YELLOW);
+			long pnl = lng(s, "pnl");
 			UiKit.label(ctx, textRenderer, x + 14, ry + 20,
-					"у вас: " + i(s, "owned") + " · див " + String.format(java.util.Locale.ROOT, "%.1f", dbl(s, "div")) + "%/д"
-							+ " · " + i(s, "lo") + "…" + i(s, "hi"), UiKit.COL_TEXT_DIM);
+					"у вас: " + i(s, "owned") + " · P/L " + (pnl >= 0 ? "+" : "") + pnl
+							+ " · див " + String.format(java.util.Locale.ROOT, "%.1f", dbl(s, "div")) + "%/д",
+					pnl >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
 			drawSparkline(ctx, x + 152, ry + 10, 52, 14, s.getIntArray("hist").orElse(new int[0]));
 			// кнопки +1/-1/+10/-10
 			UiKit.button(ctx, textRenderer, x + PW - 72, ry + 3, 28, 11, "+1", mx, my, true);
@@ -1348,7 +1422,9 @@ public class PhoneScreen extends CraftNetScreen {
 		String bal = UiKit.fmt(lng(data, "balance")) + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 16 - textRenderer.getWidth(bal), y + 8,
 				UiKit.COL_YELLOW, false);
-		UiKit.label(ctx, textRenderer, x + 70, y + 8, "процент 0.15%/день от 50 CR", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 70, y + 8,
+				"процент " + String.format(java.util.Locale.ROOT, "%.2f", dbl(data, "bankInterestPct"))
+						+ "%/день от " + lng(data, "bankInterestMin") + " CR", UiKit.COL_TEXT_DIM);
 
 		// перевод игроку (поля ввода живут внутри карточки)
 		UiKit.card(ctx, x + 8, y + 30, PW - 16, 80, UiKit.COL_PANEL);

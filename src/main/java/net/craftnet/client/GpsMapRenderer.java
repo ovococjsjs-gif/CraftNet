@@ -41,6 +41,7 @@ public final class GpsMapRenderer {
 	private long lastTick = -1;
 	private int lastCX = Integer.MIN_VALUE;
 	private int lastCZ = Integer.MIN_VALUE;
+	private ClientWorld lastWorld;
 	private int zoom = 1;
 	private int lastZoom = -1;
 
@@ -70,10 +71,16 @@ public final class GpsMapRenderer {
 		long tick = world.getTime();
 		int cx = player.getBlockPos().getX();
 		int cz = player.getBlockPos().getZ();
-		boolean moved = Math.abs(cx - lastCX) > zoom * 2 || Math.abs(cz - lastCZ) > zoom * 2;
+		boolean worldChanged = world != lastWorld;
+		boolean moved = Math.abs(cx - lastCX) >= zoom * 4 || Math.abs(cz - lastCZ) >= zoom * 4;
 		boolean zoomChanged = zoom != lastZoom;
-		if (!zoomChanged && !moved && tick - lastTick < 10) return;
+		long age = worldChanged || tick < lastTick ? Long.MAX_VALUE : tick - lastTick;
+		// A full map is 25,600 column samples. Enforce a hard half-second
+		// throttle even while moving and refresh a stationary map only every 2 s.
+		if (!worldChanged && !zoomChanged && age < 10) return;
+		if (!worldChanged && !zoomChanged && !moved && age < 40) return;
 		lastTick = tick;
+		lastWorld = world;
 		lastCX = cx;
 		lastCZ = cz;
 		lastZoom = zoom;

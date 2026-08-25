@@ -48,12 +48,15 @@ public class PvzScreen extends CraftNetScreen {
 		inputs.add(priceInput);
 	}
 
+	@Override protected int designWidth() { return PW + 16; }
+	@Override protected int designHeight() { return PH + 16; }
+
 	private int px() {
-		return (width - PW) / 2;
+		return (canvasWidth() - PW) / 2;
 	}
 
 	private int py() {
-		return (height - PH) / 2;
+		return (canvasHeight() - PH) / 2;
 	}
 
 	@Override
@@ -213,21 +216,27 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 28, ry + 2, trim(str(c, "name"), 10) + " ×" + i(c, "count"),
 					UiKit.COL_TEXT);
 			UiKit.label(ctx, textRenderer, x + 28, ry + 12, i(c, "price") + " CR/шт", UiKit.COL_YELLOW);
-			final String fid = str(c, "id");
+			final int slot = i(c, "slot");
 			final int have = i(c, "count");
-			// продажа частью: с «шт» в поле — ровно столько (кнопка показывает сколько)
+			final NbtCompound expected = sub(c, "stack");
+			boolean plain = i(c, "plain") == 1;
+			// Server sale destroys the item and therefore accepts only default-component
+			// stacks. The flea market preserves exact components and accepts either.
 			int sellN = lotCount() > 0 ? Math.min(lotCount(), have) : have;
 			UiKit.button(ctx, textRenderer, x + w - 64, ry + 5, 30, 13,
-					lotCount() > 0 ? "×" + sellN : "всё", mx, my, sellN >= 1);
-			clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(fid, sellN));
-			// пустое поле «шт» = выставить всё (до 64) — поэтому кнопке хватит цены
+					plain ? (lotCount() > 0 ? "×" + sellN : "всё") : "—", mx, my,
+					plain && sellN >= 1);
+			if (plain && sellN >= 1) {
+				clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(slot, expected, sellN));
+			}
 			UiKit.button(ctx, textRenderer, x + w - 30, ry + 5, 18, 13, "₽", mx, my,
 					have >= 1 && price() > 0);
 			clickable(x + w - 30, ry + 5, 18, 13, () -> {
 				NbtCompound a = new NbtCompound();
-				a.putString("id", fid);
+				a.putInt("slot", slot);
+				a.put("stack", expected.copy());
 				a.putInt("price", price());
-				a.putInt("count", lotCount() > 0 ? lotCount() : 64); // пусто = всё (до 64)
+				a.putInt("count", lotCount() > 0 ? Math.min(lotCount(), have) : have);
 				send("market_list", a);
 			});
 			ry += ROW_STEP - 3; // sell: шаг 25
@@ -312,10 +321,11 @@ public class PvzScreen extends CraftNetScreen {
 						net.minecraft.client.util.InputUtil.GLFW_KEY_RIGHT_SHIFT);
 	}
 
-	private void sellAction(String id, int n) {
+	private void sellAction(int slot, NbtCompound expected, int n) {
 		if (n <= 0) return;
 		NbtCompound a = new NbtCompound();
-		a.putString("id", id);
+		a.putInt("slot", slot);
+		a.put("stack", expected.copy());
 		a.putInt("count", n);
 		send("sell", a);
 	}

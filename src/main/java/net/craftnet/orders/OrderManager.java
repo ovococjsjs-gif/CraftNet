@@ -30,11 +30,14 @@ public final class OrderManager {
 	public static final int KIND_DELIVERY = 0;
 	public static final int KIND_PAYOUT = 1;
 
-	public static final int BASE_TRAVEL_TICKS = net.craftnet.config.CraftNetConfig.get().deliveryTravelTicks; // 2 мин при 4G (конфиг)
+	/** Reload-safe config accessors. */
+	public static int baseTravelTicks() {
+		return net.craftnet.config.CraftNetConfig.get().deliveryTravelTicks;
+	}
 
-	/** M5: незабранная доставка живёт 5 игровых дней после готовности, затем
-	 *  компенсируется деньгами (по цене продажи) и удаляется — стейт не растёт вечно. */
-	public static final long DELIVERY_TTL_TICKS = net.craftnet.config.CraftNetConfig.get().deliveryTtlTicks;
+	public static long deliveryTtlTicks() {
+		return net.craftnet.config.CraftNetConfig.get().deliveryTtlTicks;
+	}
 
 	public static OrdersState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(OrdersState.TYPE);
@@ -118,7 +121,7 @@ public final class OrderManager {
 			long ready = o.getLong("ready", Long.MAX_VALUE);
 			if (kind == KIND_DELIVERY) {
 				// M5: TTL после готовности — компенсация деньгами и удаление
-				if (ready <= now && now - ready > DELIVERY_TTL_TICKS) {
+				if (ready <= now && now - ready > deliveryTtlTicks()) {
 					ItemStack stack = decodeStack(server, Nbt2.sub(o, "item"));
 					long value = 0;
 					if (!stack.isEmpty()) {
@@ -256,6 +259,7 @@ public final class OrderManager {
 	 * @return true, если выдали.
 	 */
 	public static boolean claim(MinecraftServer server, ServerPlayerEntity player, long orderId) {
+		if (player.getEntityWorld() != server.getOverworld()) return false;
 		OrdersState st = state(server);
 		NbtList list = st.data().getListOrEmpty("orders");
 		long now = server.getOverworld().getTime();

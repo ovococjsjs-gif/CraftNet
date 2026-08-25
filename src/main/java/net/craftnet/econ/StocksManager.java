@@ -330,6 +330,22 @@ public final class StocksManager {
 				.getInt(id.toUpperCase(java.util.Locale.ROOT), 0);
 	}
 
+	private static long costBasis(MinecraftServer server, UUID player, String id) {
+		return Nbt2.sub(get(server).data(), "basis")
+				.getCompound(player.toString()).orElseGet(NbtCompound::new)
+				.getLong(id.toUpperCase(java.util.Locale.ROOT), 0L);
+	}
+
+	private static void setCostBasis(MinecraftServer server, UUID player, String id, long value) {
+		StocksState st = get(server);
+		NbtCompound all = Nbt2.sub(st.data(), "basis");
+		NbtCompound rec = all.getCompound(player.toString()).orElseGet(NbtCompound::new);
+		rec.putLong(id.toUpperCase(java.util.Locale.ROOT), Math.max(0, value));
+		all.put(player.toString(), rec);
+		st.data().put("basis", all);
+		st.markDirty();
+	}
+
 	private static void setOwned(MinecraftServer server, UUID player, String id, int n) {
 		StocksState st = get(server);
 		NbtCompound hold = Nbt2.sub(st.data(), "hold");
@@ -355,10 +371,12 @@ public final class StocksManager {
 		double price = price(server, c.id);
 		if (price <= 0) return BUY_FAIL;
 		long cost = Math.max(1, Math.round(price * n * (1 + SPREAD)));
+		long marketAdded = Math.max(1, Math.round(price * n));
 		long cap = net.craftnet.config.CraftNetConfig.get().stocksMaxExposure;
-		if (portfolioValue(server, player) + cost > cap) return BUY_LIMIT;
+		if (portfolioValue(server, player) + marketAdded > cap) return BUY_LIMIT;
 		if (!MoneyManager.tryCharge(server, player, cost, "акции " + c.id)) return BUY_FAIL;
 		setOwned(server, player, c.id, owned(server, player, c.id) + n);
+		setCostBasis(server, player, c.id, costBasis(server, player, c.id) + cost);
 		StatsManager.bump(server, player, StatsManager.STOCKS_BOUGHT, n);
 		StatsManager.addXp(server, player, 2);
 		return BUY_OK;
@@ -382,9 +400,14 @@ public final class StocksManager {
 		if (have < n) return -1;
 		double price = price(server, c.id);
 		long gain = Math.max(1, Math.round(price * n * (1 - SPREAD)));
+		long basis = costBasis(server, player, c.id);
+		if (basis <= 0 && have > 0) basis = Math.round(price * have); // legacy migration
+		long releasedBasis = n == have ? basis : Math.round(basis * (n / (double) have));
 		setOwned(server, player, c.id, have - n);
+		setCostBasis(server, player, c.id, Math.max(0, basis - releasedBasis));
 		MoneyManager.add(server, player, gain, "акции " + c.id);
-		StatsManager.bump(server, player, StatsManager.STOCKS_EARN, gain);
+		// Profile earnings are realized P&L, not gross principal returned.
+		StatsManager.bump(server, player, StatsManager.STOCKS_EARN, gain - releasedBasis);
 		return gain;
 	}
 
@@ -400,7 +423,11 @@ public final class StocksManager {
 			row.putDouble("price", p);
 			row.putDouble("delta", prev <= 0 ? 0 : (p - prev) / prev * 100.0);
 			row.putIntArray("hist", history(server, c.id));
-			row.putInt("owned", owned(server, player, c.id));
+			int owned = owned(server, player, c.id);
+			long basis = costBasis(server, player, c.id);
+			row.putInt("owned", owned);
+			row.putLong("basis", basis);
+			row.putLong("pnl", owned <= 0 ? 0 : Math.round(p * owned) - basis);
 			row.putDouble("div", c.divYield * 100.0); // доходность %/день
 			row.putInt("lo", (int) c.lo);
 			row.putInt("hi", (int) c.hi);
