@@ -4,7 +4,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.text.Text;
 
-/** Банкомат: обналичивание баланса в банкноты и обратно. */
+/**
+ * Банкомат: обналичивание баланса в банкноты и обратно.
+ *
+ * <p>Единственное текстовое поле — сумма с чипами быстрого ввода
+ * (+10/+100/+1000/макс); номинал банкнот подбирает сервер (стаками ≤64).
+ */
 public class BankScreen extends CraftNetScreen {
 
 	private static final int PW = 220;
