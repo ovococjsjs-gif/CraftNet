@@ -643,6 +643,7 @@ public final class JobManager {
 			long total = fee + matLoss;
 			StatsManager.bump(server, player, StatsManager.JOBS_CANCELED, 1);
 			StatsManager.bump(server, player, StatsManager.FINES_PAID, total);
+			StatsManager.set(server, player, StatsManager.JOBS_STREAK, 0); // срыв обнуляет серию
 			if (total > 0) {
 				long bal = MoneyManager.balance(server, player);
 				MoneyManager.add(server, player, -Math.min(bal, total), "штраф за срыв смены");
@@ -658,11 +659,12 @@ public final class JobManager {
 		if (p != null) p.sendMessage(Text.translatable(msgKey), false);
 	}
 
-	/** Единая точка статистики оплаченной смены: счётчики + опыт. */
+	/** Единая точка статистики оплаченной смены: счётчики + опыт + серия. */
 	private static void payStats(MinecraftServer server, UUID player, String jobCounterKey, long pay) {
 		StatsManager.bump(server, player, StatsManager.JOBS_DONE, 1);
 		StatsManager.bump(server, player, jobCounterKey, 1);
 		StatsManager.bump(server, player, StatsManager.EARN_JOBS, pay);
+		StatsManager.bump(server, player, StatsManager.JOBS_STREAK, 1); // серия растёт с каждой оплаченной сменой
 		StatsManager.addXp(server, player, Math.max(1, pay / 10));
 	}
 

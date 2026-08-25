@@ -57,6 +57,7 @@ public final class StatsManager {
 	public static final String TOWER_UPGRADES = "towerUpgrades";
 	public static final String TOWER_INVESTED = "towerInvested";
 	public static final String BALANCE_NOW = "balanceNow";
+	public static final String JOBS_STREAK = "jobsStreak"; // серия успешных смен без срыва
 
 	// -------------------- состояние --------------------
 
@@ -170,7 +171,24 @@ public final class StatsManager {
 			new Ach("engineer", TOWER_UPGRADES, "", 3, 150, "Инженер связи",
 					"прокачай вышки 3 раза"),
 			new Ach("millionaire", BALANCE_NOW, "", 10000, 300, "Миллионер",
-					"держи 10 000 CR на счёте"));
+					"держи 10 000 CR на счёте"),
+			// ---- второй эшелон ----
+			new Ach("streak5", JOBS_STREAK, "", 5, 150, "Стахановец",
+					"5 смен подряд без единого срыва"),
+			new Ach("streak15", JOBS_STREAK, "", 15, 400, "Марафонец",
+					"15 смен подряд без единого срыва"),
+			new Ach("director", JOBS_FACTORY, "", 50, 300, "Директор завода",
+					"50 смен на заводе (мини-игра и заказы цеха)"),
+			new Ach("chef", JOBS_COOK, "", 40, 250, "Шеф-повар",
+					"40 смен в кафе"),
+			new Ach("postmaster", JOBS_LOADER, JOBS_COURIER, 50, 250, "Почтмейстер",
+					"50 доставок грузчиком или курьером"),
+			new Ach("jackpot", CASINO_BEST, "", 2000, 250, "Джекпот",
+					"сорви приз ценой от 2000 CR"),
+			new Ach("landlord", DIVIDENDS, "", 5000, 250, "Рантье",
+					"получи 5000 CR дивидендами"),
+			new Ach("architect", TOWER_INVESTED, "", 15000, 300, "Архитектор сети",
+					"вложи 15 000 CR в вышки деревень"));
 
 	public static boolean unlocked(NbtCompound rec, String achId) {
 		return Nbt2.sub(rec, "ach").getInt(achId, 0) != 0;
@@ -205,6 +223,98 @@ public final class StatsManager {
 			saveRec(st, id, rec);
 			addXp(server, id, bonusXp);
 		}
+		checkChallenges(server, id); // единый крюк: любые счётчики проходят и по челленджам
+	}
+
+	// -------------------- сезонные челленджи --------------------
+
+	/** Игровая неделя сезона: 7 суток × 24000 тиков (~2.3 часа реального времени). */
+	public static final long SEASON_TICKS = 24000L * 7;
+
+	public static long seasonOf(MinecraftServer server) {
+		return server.getOverworld().getTime() / SEASON_TICKS;
+	}
+
+	/** Челлендж: прогресс = ПРИРОСТ счётчика key за текущий сезон. */
+	public record Challenge(String id, String key, long need, long rewardCr, long xp,
+			String name, String desc) {}
+
+	/** Пул ротации (9 штук): 3 активных выбираются детерминированно по сезону. */
+	public static final List<Challenge> CHALLENGES = List.of(
+			new Challenge("courier_run", JOBS_COURIER, 6, 350, 120, "Почтовый маршрут",
+					"6 курьерских доставок за сезон"),
+			new Challenge("factory_shift", JOBS_FACTORY, 6, 400, 120, "Вахта",
+					"6 смен на заводе за сезон"),
+			new Challenge("cook_shift", JOBS_COOK, 6, 350, 120, "Полная кухня",
+					"6 заказов кафе за сезон"),
+			new Challenge("sales_week", EARN_SALES, 1200, 400, 150, "Опт и розница",
+					"продажи серверу на 1200 CR за сезон"),
+			new Challenge("spins_week", SPINS, 8, 300, 100, "На удачу",
+					"8 спинов апгрейдера за сезон"),
+			new Challenge("market_week", MARKET_BOUGHT, 3, 350, 120, "Барахольщик",
+					"купи 3 лота на барахолке за сезон"),
+			new Challenge("parcels_week", PARCELS, 4, 300, 100, "Пункт выдачи",
+					"забери 4 посылки в ПВЗ за сезон"),
+			new Challenge("jobs_week", JOBS_DONE, 10, 500, 150, "Полная загрузка",
+					"10 смен любого вида за сезон"),
+			new Challenge("transfer_kind", TRANSFERS_SENT, 500, 300, 100, "Поддержка соседа",
+					"отправь 500 CR переводами за сезон"));
+
+	/** Три активных челленджа сезона (одинаковы для всего сервера — общая гонка). */
+	public static List<Challenge> activeChallenges(long season) {
+		int n = CHALLENGES.size();
+		int a = (int) (season % n);
+		return List.of(CHALLENGES.get(a), CHALLENGES.get((a + 3) % n), CHALLENGES.get((a + 6) % n));
+	}
+
+	/**
+	 * Прогресс челленджей и выдача призов. Сезон хранится в rec.ch: при смене
+	 * сезона базлайны счётчиков сбрасываются текущими значениями, а done-флаги
+	 * обнуляются. Лениво: бездействующий игрок «пересядет» на новый сезон при
+	 * первом же bump()/set() (или при открытии профиля).
+	 */
+	public static void checkChallenges(MinecraftServer server, UUID id) {
+		StatsState st = state(server);
+		NbtCompound rec = rec(st, id);
+		long season = seasonOf(server);
+		List<Challenge> active = activeChallenges(season);
+		NbtCompound ch = Nbt2.sub(rec, "ch");
+		if (ch.getLong("season", Long.MIN_VALUE) != season) {
+			ch = new NbtCompound();
+			ch.putLong("season", season);
+			for (Challenge c : active) {
+				ch.putLong("b_" + c.key(), Nbt2.lng(rec, c.key()));
+			}
+			rec.put("ch", ch);
+			saveRec(st, id, rec);
+			return; // переходный тик: прогресс ещё нулевой
+		}
+		NbtCompound done = Nbt2.sub(ch, "d");
+		boolean awarded = false;
+		long bonusXp = 0;
+		for (Challenge c : active) {
+			if (done.getInt(c.id(), 0) != 0) continue;
+			long prog = Nbt2.lng(rec, c.key()) - ch.getLong("b_" + c.key(), 0L);
+			if (prog < c.need()) continue;
+			done.putInt(c.id(), 1);
+			awarded = true;
+			bonusXp += c.xp();
+			MoneyManager.add(server, id, c.rewardCr(), "челлендж сезона «" + c.name() + "»");
+			net.craftnet.CraftNet.LOGGER.info("[CraftNet] Челлендж {}: «{}» (+{} CR)",
+					id.toString().substring(0, 8), c.name(), c.rewardCr());
+			ServerPlayerEntity p = server.getPlayerManager().getPlayer(id);
+			if (p != null) {
+				p.sendMessage(Text.literal("§d✦ Челлендж сезона: «§f" + c.name()
+						+ "§d» §7— +" + c.rewardCr() + " CR, +" + c.xp() + " XP"), false);
+				p.playSound(SoundEvents.ENTITY_PLAYER_LEVELUP, 0.8f, 1.4f);
+			}
+		}
+		if (awarded) {
+			ch.put("d", done);
+			rec.put("ch", ch);
+			saveRec(st, id, rec);
+			addXp(server, id, bonusXp);
+		}
 	}
 
 	// -------------------- вид для телефона --------------------
@@ -217,8 +327,10 @@ public final class StatsManager {
 	public static NbtCompound profileView(MinecraftServer server, ServerPlayerEntity player) {
 		// «Миллионер» реагирует на текущий баланс — освежаем перед показом
 		set(server, player.getUuid(), BALANCE_NOW, MoneyManager.balance(server, player.getUuid()));
+		UUID id = player.getUuid();
+		checkChallenges(server, id); // ленивая миграция сезона при открытии профиля
 		StatsState st = state(server);
-		NbtCompound rec = rec(st, player.getUuid());
+		NbtCompound rec = rec(st, id);
 
 		NbtCompound out = new NbtCompound();
 		long xp = Nbt2.lng(rec, XP);
@@ -231,7 +343,7 @@ public final class StatsManager {
 
 		NbtCompound c = new NbtCompound();
 		for (String k : rec.getKeys()) {
-			if (!"ach".equals(k)) c.putLong(k, Nbt2.lng(rec, k));
+			if (!"ach".equals(k) && !"ch".equals(k)) c.putLong(k, Nbt2.lng(rec, k));
 		}
 		out.put("c", c);
 
@@ -247,6 +359,28 @@ public final class StatsManager {
 			rows.add(r);
 		}
 		out.put("ach", rows);
+
+		// ---- сезонные челленджи: три активных, прогресс от базлайна сезона ----
+		long time = server.getOverworld().getTime();
+		NbtCompound ch = Nbt2.sub(rec, "ch");
+		NbtCompound chDone = Nbt2.sub(ch, "d");
+		NbtList chRows = new NbtList();
+		for (Challenge cc : activeChallenges(seasonOf(server))) {
+			long prog = Math.max(0L, Nbt2.lng(rec, cc.key())
+					- ch.getLong("b_" + cc.key(), 0L));
+			NbtCompound r = new NbtCompound();
+			r.putString("id", cc.id());
+			r.putString("name", cc.name());
+			r.putString("desc", cc.desc());
+			r.putLong("cur", Math.min(prog, cc.need()));
+			r.putLong("need", cc.need());
+			r.putInt("done", chDone.getInt(cc.id(), 0));
+			r.putLong("rcr", cc.rewardCr());
+			r.putLong("xp", cc.xp());
+			chRows.add(r);
+		}
+		out.put("chall", chRows);
+		out.putLong("chLeft", SEASON_TICKS - time % SEASON_TICKS); // тиков до ротации
 		return out;
 	}
 }
