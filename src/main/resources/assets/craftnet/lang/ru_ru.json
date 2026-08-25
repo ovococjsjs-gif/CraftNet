@@ -63,6 +63,7 @@
   "craftnet.pvz.title": "Пункт выдачи",
   "craftnet.shop.no_village": "Рядом нет деревни онлайн для доставки.",
   "craftnet.shop.ordered": "Заказ принят: %s ×%s → ПВЗ «%s». Ожидание ~%s сек.",
+  "craftnet.shop.ordered_batch": "Заказ принят: %s поз. на %s CR — доставка в %s (~%s с).",
   "craftnet.shop.unavailable": "Этот товар недоступен.",
   "craftnet.stocks.dividend": "Дивиденды по акциям: +%s CR",
   "craftnet.stocks.fail_buy": "Не удалось купить акции (хватает средств? правильный тикер?).",

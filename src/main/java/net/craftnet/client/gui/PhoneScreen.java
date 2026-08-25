@@ -8,6 +8,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -32,7 +33,14 @@ public class PhoneScreen extends CraftNetScreen {
 	private GpsMapRenderer map;
 	private UiKit.TextInput searchInput;
 	private UiKit.TextInput casinoSearchInput;
+	private UiKit.TextInput marketSearchInput;
+	private String marketQ = "";
 	private String targetQuery = "";
+	// двухшаговое подтверждение платных действий: ключ кнопки + дедлайн
+	private String armedKey = "";
+	private long armedUntil = -1;
+	// корзина магазина: id → (сколько, цена за шт на момент добавления)
+	private final java.util.Map<String, long[]> cart = new java.util.LinkedHashMap<>();
 	// выбранная цель апгрейда
 	private String casinoTarget;
 	private int casinoTargetPrice;
@@ -72,10 +80,15 @@ public class PhoneScreen extends CraftNetScreen {
 		super.init();
 		inputs.clear();
 		searchInput = null;
+		marketSearchInput = null;
 		if (tab == Tab.SHOP) {
 			searchInput = new UiKit.TextInput(px() + 8, py() + 43, 150, "поиск предмета…", false);
 			searchInput.value = query;
 			inputs.add(searchInput);
+		} else if (tab == Tab.MARKET) {
+			marketSearchInput = new UiKit.TextInput(px() + 8, py() + 43, 150, "лот или предмет…", false);
+			marketSearchInput.value = marketQ;
+			inputs.add(marketSearchInput);
 		} else if (tab == Tab.CASINO) {
 			if (casinoPickMode) {
 				casinoSearchInput = new UiKit.TextInput(px() + 8, py() + 44, PW - 64, "название цели… (Enter)", false);
@@ -104,6 +117,7 @@ public class PhoneScreen extends CraftNetScreen {
 		casinoHint = "";
 		tab = t;
 		query = searchInput == null ? query : searchInput.value;
+		marketQ = marketSearchInput == null ? marketQ : marketSearchInput.value;
 		clearAndInit();
 	}
 
@@ -324,9 +338,15 @@ public class PhoneScreen extends CraftNetScreen {
 		// счётчик количества (верхняя строка, справа от поиска): − ×N + и «М»
 		UiKit.label(ctx, textRenderer, x + PW - 92, y + 7, "×" + buyCount, UiKit.COL_TEXT);
 		UiKit.button(ctx, textRenderer, x + PW - 66, y + 3, 14, 14, "-", mx, my, buyCount > 1);
-		clickable(x + PW - 66, y + 3, 14, 14, () -> buyCount = Math.max(1, buyCount / 2));
+		clickable(x + PW - 66, y + 3, 14, 14, () -> {
+			buyCount = Math.max(1, buyCount / 2);
+			armedKey = ""; // итог кнопок сменился — сбрасываем подтверждение
+		});
 		UiKit.button(ctx, textRenderer, x + PW - 50, y + 3, 14, 14, "+", mx, my, buyCount < 64);
-		clickable(x + PW - 50, y + 3, 14, 14, () -> buyCount = Math.min(64, buyCount * 2));
+		clickable(x + PW - 50, y + 3, 14, 14, () -> {
+			buyCount = Math.min(64, buyCount * 2);
+			armedKey = "";
+		});
 		// L10: «Макс» — самое большое количество, которое хватит баланса купить ЛЮБОЙ
 		// из видимых товаров (чтобы все кнопки строк остались доступными)
 		UiKit.button(ctx, textRenderer, x + PW - 34, y + 3, 14, 14, "М", mx, my, true);
@@ -359,14 +379,28 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
 					UiKit.fit(textRenderer, i(e, "buy") + " CR/шт" + (disc > 0 ? " (−" + disc + "%)" : "")
 							+ " · продажа " + i(e, "sell"), labelW), UiKit.COL_TEXT_DIM);
-			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
-					lng(data, "balance") >= total);
 			final String fid = str(e, "id");
+			final long unit = i(e, "buy");
+			String bkey = "s:" + fid;
+			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14,
+					armed(bkey) ? "Точно?" : total + " CR", mx, my,
+					lng(data, "balance") >= total);
 			clickable(x + PW - 68, ry + 3, 60, 14, () -> {
+				if (lng(data, "balance") < total) return;
+				if (!armed(bkey)) {
+					arm(bkey);
+					return;
+				}
+				armedKey = "";
 				NbtCompound a = new NbtCompound();
 				a.putString("id", fid);
 				a.putInt("count", buyCount);
 				send("buy", a);
+			});
+			// клик по строке каталога — добавить позицию в корзину (батч-заказ)
+			clickable(x + 8, ry, PW - 78, 20, () -> {
+				long[] line = cart.computeIfAbsent(fid, k -> new long[]{0, unit});
+				line[0] = Math.min(640, line[0] + buyCount);
 			});
 		}
 		if (visible == 0) {
@@ -381,9 +415,49 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 34, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
 		UiKit.button(ctx, textRenderer, x + 92, py2, 18, 14, ">", mx, my, page + 1 < pages);
 		clickable(x + 92, py2, 18, 14, () -> sendQuery(query, page + 1));
-		UiKit.label(ctx, textRenderer, x + PW - 128, py2 + 3,
-				disc > 0 ? "−" + disc + "% за умную вышку" : "доставка в ПВЗ",
-				disc > 0 ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM);
+		if (cart.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + PW - 128, py2 + 3,
+					disc > 0 ? "−" + disc + "% за умную вышку" : "доставка в ПВЗ",
+					disc > 0 ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM);
+		} else {
+			renderShopCart(ctx, x, py2, disc, mx, my);
+		}
+	}
+
+	/** Полоса корзины в пейджере магазина: Σ позиций, оформление батчем, очистка. */
+	private void renderShopCart(DrawContext ctx, int x, int py2, int disc, double mx, double my) {
+		long acc = 0;
+		for (var e : cart.entrySet()) {
+			// итог зеркалит серверный phoneBuyBatch: Σ round(buy×count×factor)
+			acc += Math.round(e.getValue()[1] * e.getValue()[0] * (100 - disc) / 100.0);
+		}
+		final long sum = acc;
+		String info = cart.size() + " поз · " + sum + " CR";
+		UiKit.label(ctx, textRenderer, x + 116, py2 + 3, info, UiKit.COL_YELLOW);
+		String ckey = "cart:" + sum + ":" + cart.size();
+		UiKit.button(ctx, textRenderer, x + PW - 92, py2, 62, 14,
+				armed(ckey) ? "Точно?" : "Оформить", mx, my, lng(data, "balance") >= sum);
+		clickable(x + PW - 92, py2, 62, 14, () -> {
+			if (lng(data, "balance") < sum) return;
+			if (!armed(ckey)) {
+				arm(ckey);
+				return;
+			}
+			NbtCompound a = new NbtCompound();
+			NbtList items = new NbtList();
+			for (var e : cart.entrySet()) {
+				NbtCompound c = new NbtCompound();
+				c.putString("id", e.getKey());
+				c.putInt("count", (int) e.getValue()[0]);
+				items.add(c);
+			}
+			a.put("items", items);
+			send("buy_batch", a);
+			cart.clear();
+			armedKey = "";
+		});
+		UiKit.label(ctx, textRenderer, x + PW - 24, py2 + 3, "✕", UiKit.COL_TEXT_DIM);
+		clickable(x + PW - 28, py2 - 2, 16, 20, cart::clear);
 	}
 
 	// ------------------------------ Казино-апгрейд ------------------------------
@@ -886,32 +960,47 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 		NbtCompound market = sub(data, "market");
 		var entries = rows(market, "entries");
-		UiKit.label(ctx, textRenderer, x + 10, y + 6,
-				"лотов: " + i(market, "total") + " · комиссия 5% у продавца", UiKit.COL_TEXT_DIM);
+		// строка поиска — в init(); под ней сводка
+		UiKit.label(ctx, textRenderer, x + 10, y + 19,
+				"лотов: " + i(market, "total") + " · комиссия 5% у продавца · ★ — лучшая цена",
+				UiKit.COL_TEXT_DIM);
 		if (entries.isEmpty()) {
-			UiKit.label(ctx, textRenderer, x + 10, y + 48, "Пока пусто. Продавай своё из ПВЗ —", UiKit.COL_TEXT_DIM);
-			UiKit.label(ctx, textRenderer, x + 10, y + 60, "кнопка ₽ рядом с предметом.", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 10, y + 48,
+				marketQ.isEmpty() ? "Пока пусто. Продавай своё из ПВЗ —" : "По запросу ничего нет.",
+				UiKit.COL_TEXT_DIM);
+			if (marketQ.isEmpty()) {
+				UiKit.label(ctx, textRenderer, x + 10, y + 60, "кнопка ₽ рядом с предметом.", UiKit.COL_TEXT_DIM);
+			}
 		}
-		int listY = y + 22;
+		int listY = y + 31;
 		int visible = Math.min(entries.size(), 6);
 		for (int idx = 0; idx < visible; idx++) {
 			NbtCompound e = entries.get(idx);
-			int ry = listY + idx * 22;
-			UiKit.card(ctx, x + 8, ry, PW - 16, 20, UiKit.COL_PANEL);
+			int ry = listY + idx * 21;
+			UiKit.card(ctx, x + 8, ry, PW - 16, 19, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "itemId")));
-			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
+			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 1);
 			int labelW = PW - 68 - 34 - 6;
+			boolean best = i(e, "best") == 1;
 			UiKit.label(ctx, textRenderer, x + 34, ry + 2,
-					UiKit.fit(textRenderer, str(e, "name") + " ×" + i(e, "count"), labelW),
-					UiKit.COL_TEXT);
-			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
+					UiKit.fit(textRenderer, str(e, "name") + " ×" + i(e, "count") + (best ? " ★" : ""), labelW),
+					best ? UiKit.COL_GREEN : UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + 34, ry + 10,
 					UiKit.fit(textRenderer, "от " + str(e, "seller") + " · " + i(e, "price") + " CR/шт", labelW),
 					UiKit.COL_TEXT_DIM);
 			long total = (long) i(e, "price") * i(e, "count");
-			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
-					lng(data, "balance") >= total);
 			final long lid = lng(e, "lid");
-			clickable(x + PW - 68, ry + 3, 60, 14, () -> {
+			String bkey = "m:" + lid;
+			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 2, 60, 14,
+					armed(bkey) ? "Точно?" : total + " CR", mx, my,
+					lng(data, "balance") >= total);
+			clickable(x + PW - 68, ry + 2, 60, 14, () -> {
+				if (lng(data, "balance") < total) return;
+				if (!armed(bkey)) {
+					arm(bkey);
+					return;
+				}
+				armedKey = "";
 				NbtCompound a = new NbtCompound();
 				a.putLong("lid", lid);
 				send("market_buy", a);
@@ -930,6 +1019,7 @@ public class PhoneScreen extends CraftNetScreen {
 
 	private void marketQuery(int page) {
 		NbtCompound a = new NbtCompound();
+		a.putString("q", marketQ);
 		a.putInt("page", page);
 		send("market_query", a);
 	}
@@ -958,12 +1048,31 @@ public class PhoneScreen extends CraftNetScreen {
 			casinoQuery(targetQuery, 0);
 			return true;
 		}
+		if (tab == Tab.MARKET && marketSearchInput != null && marketSearchInput.focused
+				&& (keyCode == 257 || keyCode == 335)) { // enter — поиск по барахолке
+			marketQ = marketSearchInput.value;
+			marketSearchInput.focused = false;
+			marketQuery(0);
+			return true;
+		}
 		if (tab == Tab.BANK && amountInput != null && amountInput.focused
 				&& (keyCode == 257 || keyCode == 335)) { // enter — отправить перевод
 			sendTransfer();
 			return true;
 		}
 		return super.keyPressed(input);
+	}
+
+	// ---- двухшаговое подтверждение платных действий ----
+
+	private boolean armed(String key) {
+		long now = mc() != null && mc().world != null ? mc().world.getTime() : 0;
+		return key.equals(armedKey) && now < armedUntil;
+	}
+
+	private void arm(String key) {
+		armedKey = key;
+		armedUntil = (mc() != null && mc().world != null ? mc().world.getTime() : 0) + 70; // 3.5 с
 	}
 
 	private static String trim(String s, int max) {

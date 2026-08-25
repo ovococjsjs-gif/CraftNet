@@ -63,6 +63,7 @@
   "craftnet.pvz.title": "Pickup Point",
   "craftnet.shop.no_village": "No online village nearby for delivery.",
   "craftnet.shop.ordered": "Order placed: %s ×%s → pickup point «%s». ETA ~%s s.",
+  "craftnet.shop.ordered_batch": "Order accepted: %s items for %s CR — delivery to %s (~%s s).",
   "craftnet.shop.unavailable": "This item is unavailable.",
   "craftnet.stocks.dividend": "Stock dividends: +%s CR",
   "craftnet.stocks.fail_buy": "Could not buy shares (not enough funds?).",
