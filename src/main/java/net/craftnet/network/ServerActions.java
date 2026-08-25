@@ -207,7 +207,7 @@ public final class ServerActions {
 			case "casino_query" -> {
 				if (ctx != null) {
 					OPEN.put(player.getUuid(), new OpenCtx(ctx.screen(), ctx.station(), ctx.shopQ(),
-							ctx.shopPage(), ctx.marketPage(),
+							ctx.shopPage(), ctx.marketPage(), ctx.marketQ(),
 							args.getString("q", ""), Math.max(0, args.getInt("page", 0))));
 				}
 			}
