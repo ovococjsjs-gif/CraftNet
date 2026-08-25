@@ -122,7 +122,7 @@ public final class PriceManager {
 		put(Items.COD, 6); put(Items.SALMON, 7); put(Items.COOKED_COD, 9); put(Items.COOKED_SALMON, 11);
 		put(Items.MUSHROOM_STEW, 11); put(Items.BEETROOT_SOUP, 12); put(Items.RABBIT_STEW, 16);
 		put(Items.PUMPKIN_PIE, 14); put(Items.CAKE, 45);
-		put(Items.GOLDEN_CARROT, 55);                            // топ-сытость в ваниле
+		put(Items.GOLDEN_CARROT, 38);  // carrot 4 + 8 наггетов = 28: sell=25 < 28 — антилуп                            // топ-сытость в ваниле
 		put(Items.GOLDEN_APPLE, 200); put(Items.ENCHANTED_GOLDEN_APPLE, 3000);
 		put(Items.HONEY_BOTTLE, 18); put(Items.TROPICAL_FISH, 14); put(Items.PUFFERFISH, 12);
 		put(Items.CHORUS_FRUIT, 6); put(Items.POISONOUS_POTATO, 1); put(Items.ROTTEN_FLESH, 1);
@@ -181,7 +181,7 @@ public final class PriceManager {
 		put(Items.NETHERITE_AXE, 1300); put(Items.NETHERITE_SHOVEL, 1150); put(Items.NETHERITE_HOE, 1150);
 		put(Items.NETHERITE_HELMET, 1275); put(Items.NETHERITE_CHESTPLATE, 1500);
 		put(Items.NETHERITE_LEGGINGS, 1450); put(Items.NETHERITE_BOOTS, 1200);
-		put(Items.MACE, 950); put(Items.TRIDENT, 750);
+		put(Items.MACE, 800);              // core 650 + rod 90 = 740: sell(800)=640 < 740 — антилуп put(Items.TRIDENT, 750);
 		put(Items.BUCKET, 24); put(Items.WATER_BUCKET, 26); put(Items.LAVA_BUCKET, 38);
 		put(Items.SHEARS, 18); put(Items.SHIELD, 12); put(Items.BOW, 18); put(Items.CROSSBOW, 38);
 		put(Items.FLINT_AND_STEEL, 12); put(Items.FISHING_ROD, 12);
@@ -192,7 +192,7 @@ public final class PriceManager {
 		put(Items.NAME_TAG, 65); put(Items.SADDLE, 90); put(Items.LEAD, 22);
 		put(Items.COMPASS, 30); put(Items.CLOCK, 45); put(Items.MAP, 40); put(Items.WRITABLE_BOOK, 30);
 		put(Items.ITEM_FRAME, 12); put(Items.GLOW_ITEM_FRAME, 24); put(Items.PAINTING, 14);
-		put(Items.ARMOR_STAND, 10); put(Items.FLOWER_POT, 12);
+		put(Items.ARMOR_STAND, 8); put(Items.FLOWER_POT, 12);
 		put(Items.TORCH, 2); put(Items.LANTERN, 13); put(Items.SOUL_LANTERN, 16); put(Items.CANDLE, 16);
 		put(Items.CRAFTING_TABLE, 6); put(Items.FURNACE, 10);
 		put(Items.BLAST_FURNACE, 48); put(Items.SMOKER, 24);
@@ -200,20 +200,20 @@ public final class PriceManager {
 		put(Items.ANVIL, 240);                                   // 31 железо = 310, изнашивается → 240
 		put(Items.CHIPPED_ANVIL, 100);
 		put(Items.ENCHANTING_TABLE, 480); put(Items.BREWING_STAND, 72); put(Items.CAULDRON, 52);
-		put(Items.GRINDSTONE, 12); put(Items.LOOM, 13); put(Items.CARTOGRAPHY_TABLE, 14);
+		put(Items.GRINDSTONE, 7); put(Items.LOOM, 13); put(Items.CARTOGRAPHY_TABLE, 14);
 		put(Items.SMITHING_TABLE, 22); put(Items.STONECUTTER, 15);
-		put(Items.SCAFFOLDING, 4); put(Items.LADDER, 3); put(Items.BELL, 60);
+		put(Items.SCAFFOLDING, 3); put(Items.LADDER, 3); put(Items.BELL, 60);
 		put(Items.OAK_SIGN, 3); put(Items.BEEHIVE, 45); put(Items.CAMPFIRE, 14); put(Items.SOUL_CAMPFIRE, 16);
 
 		// ---- транспорт и особое ----
-		put(Items.OAK_BOAT, 15); put(Items.MINECART, 38); put(Items.WHITE_BED, 40);
-		put(Items.FIREWORK_ROCKET, 12); put(Items.WIND_CHARGE, 20); put(Items.FIRE_CHARGE, 12);
+		put(Items.OAK_BOAT, 8);           // 5 досок: sell(8)=4 < 5 — антилуп put(Items.MINECART, 38); put(Items.WHITE_BED, 28);        // 3 шерсть + 3 доски = 21: sell(28)=19 < 21
+		put(Items.FIREWORK_ROCKET, 4);           // paper+порох = 12 / 3 шт: sell=2 < 4 put(Items.WIND_CHARGE, 20); put(Items.FIRE_CHARGE, 12);
 		put(Items.ENDER_CHEST, 340);                             // 8 обсидиана + око — не 150
 		put(Items.ENDER_EYE, 85);                                // жемчуг + порошок + труд
-		put(Items.BEACON, 2800);                                 // звезда 2000 + стекло + обсидиан
-		put(Items.CONDUIT, 1100); put(Items.END_CRYSTAL, 260);
+		put(Items.BEACON, 2500);         // звезда 2000 + стекло + обсидиан = 2111: sell=2000 < 2111                                 // звезда 2000 + стекло + обсидиан
+		put(Items.CONDUIT, 1100); put(Items.END_CRYSTAL, 240);   // tear 68 + eye 85 + 7 glass = 174: sell=163 < 174
 		put(Items.RESPAWN_ANCHOR, 480); put(Items.RECOVERY_COMPASS, 880); // 8 эхо-осколков — не 250
-		put(Items.SPYGLASS, 30); put(Items.BRUSH, 14); put(Items.BUNDLE, 20);
+		put(Items.SPYGLASS, 30); put(Items.BRUSH, 12); put(Items.BUNDLE, 14);            // leather+string = 12: sell(14)=9 < 12 — антилуп
 		put(Items.SNOWBALL, 1); put(Items.HONEYCOMB, 14); put(Items.OAK_SAPLING, 2);
 
 		// ---- наши предметы (явный белый список) ----
