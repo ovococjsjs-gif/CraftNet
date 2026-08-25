@@ -633,9 +633,27 @@ public final class ServerActions {
 		return shop;
 	}
 
+	/** Пресеты популярных целей апгрейдера (быстрый выбор без каталога). */
+	private static final String[] CASINO_PRESETS = {
+			"minecraft:diamond", "minecraft:netherite_ingot", "minecraft:diamond_sword"};
+
 	private static NbtCompound buildCasinoSync(ServerPlayerEntity player, MinecraftServer server,
 			String casinoQ, int casinoPage) {
 		NbtCompound cz = new NbtCompound();
+		// пресеты целей (только реально торгуемые)
+		NbtList presets = new NbtList();
+		for (String pid : CASINO_PRESETS) {
+			int bp = PriceManager.buyPrice(pid);
+			if (!PriceManager.tradeable(pid) || bp <= 0) continue;
+			Item pi = Registries.ITEM.get(Identifier.tryParse(pid));
+			if (pi == null) continue;
+			NbtCompound c = new NbtCompound();
+			c.putString("id", pid);
+			c.putString("name", new ItemStack(pi).getName().getString());
+			c.putInt("buy", bp);
+			presets.add(c);
+		}
+		cz.put("presets", presets);
 		NbtList staked = new NbtList();
 		for (NbtCompound row : CasinoManager.poolRows(server, player.getUuid())) staked.add(row);
 		cz.put("staked", staked);

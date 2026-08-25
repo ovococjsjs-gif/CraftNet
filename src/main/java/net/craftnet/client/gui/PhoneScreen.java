@@ -55,6 +55,12 @@ public class PhoneScreen extends CraftNetScreen {
 	private int lastMouseY;
 	private UiKit.TextInput payeeInput;
 	private UiKit.TextInput amountInput;
+	// апгрейдер: анимации
+	private long lastStakeVal = -1;
+	private long stakePulseStart = -100;
+	private float shownBp;
+	private static final int COL_STEP1 = 0xFF7EE787;
+	private static final int COL_STEP2 = 0xFF58A6FF;
 
 	public PhoneScreen(NbtCompound data) {
 		super("phone", Text.translatable("craftnet.phone.title"), data);
@@ -393,15 +399,30 @@ public class PhoneScreen extends CraftNetScreen {
 
 		// ================= верх: ставка | циферблат | цель =================
 		int topY = y;
-		// ---- карточка ставки ----
-		UiKit.card(ctx, x + 8, topY, 108, 60, UiKit.COL_PANEL);
-		UiKit.label(ctx, textRenderer, x + 14, topY + 4, "Ставка", UiKit.COL_TEXT_DIM);
+
+		// ---- карточка ставки: «1. Ставка», вспышка при изменении ----
+		if (stakeVal != lastStakeVal) {
+			lastStakeVal = stakeVal;
+			stakePulseStart = now;
+		}
+		int stakeBg = UiKit.COL_PANEL;
+		long pulseAge = now - stakePulseStart;
+		if (pulseAge >= 0 && pulseAge < 14) {
+			int k = (int) (14 - pulseAge); // 13..1
+			stakeBg = blend(stakeBg, 0xFF2D5A38, k / 13.0f);
+		}
+		UiKit.card(ctx, x + 8, topY, 108, 60, stakeBg);
+		UiKit.label(ctx, textRenderer, x + 14, topY + 4, "1. Ставка", COL_STEP1);
 		int ix = x + 14;
 		for (NbtCompound e : staked) {
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), ix, topY + 14);
 			UiKit.label(ctx, textRenderer, ix + 1, topY + 31, "×" + i(e, "count"), UiKit.COL_TEXT_DIM);
 			ix += 22;
+		}
+		if (staked.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 14, topY + 20, "кликай предметы", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 14, topY + 31, "в сетке ниже ↓", UiKit.COL_TEXT_DIM);
 		}
 		UiKit.label(ctx, textRenderer, x + 14, topY + 45,
 				"Ценность: " + stakeVal, stakeVal > 0 ? UiKit.COL_YELLOW : UiKit.COL_TEXT_DIM);
@@ -410,27 +431,58 @@ public class PhoneScreen extends CraftNetScreen {
 			clickable(x + 96, topY + 3, 16, 11, () -> send("casino_clear", new NbtCompound()));
 		}
 
-		// ---- циферблат ----
+		// ---- циферблат (дуга плавно догоняет шанс) ----
+		if (!animating) {
+			shownBp += (arcBp - shownBp) * 0.25f;
+			if (Math.abs(shownBp - arcBp) < 2f) shownBp = arcBp;
+		} else {
+			shownBp = animBp;
+		}
 		int cx = x + PW / 2;
 		int cyd = topY + 30;
 		int radius = 27;
-		drawDial(ctx, cx, cyd, radius, arcBp, animating, now, lastId, last);
+		drawDial(ctx, cx, cyd, radius, Math.round(shownBp), animating, now, lastId, last);
 
-		// ---- карточка цели ----
+		// ---- карточка цели: «2. Цель» (+ пресеты быстрого выбора) ----
 		UiKit.card(ctx, x + PW - 116, topY, 108, 60, UiKit.COL_PANEL);
+		UiKit.label(ctx, textRenderer, x + PW - 110, topY + 4, "2. Цель", COL_STEP2);
 		if (casinoTarget == null) {
-			ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("выбери цель"),
-					x + PW - 62, topY + 20, UiKit.COL_TEXT_DIM);
-			ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("(нажми)"),
-					x + PW - 62, topY + 32, UiKit.COL_TEXT_DIM);
+			var presets = rows(cz, "presets");
+			int pk = 0;
+			for (NbtCompound pre : presets) {
+				if (pk >= 3) break;
+				int px = x + PW - 106 + pk * 35;
+				Item pi = Registries.ITEM.get(Identifier.tryParse(str(pre, "id")));
+				if (pi != null) ctx.drawItem(pi.getDefaultStack(), px, topY + 14);
+				UiKit.label(ctx, textRenderer, px - 2, topY + 33, "" + i(pre, "buy"), UiKit.COL_YELLOW);
+				UiKit.label(ctx, textRenderer, px - 2, topY + 43, trim(str(pre, "name"), 5), UiKit.COL_TEXT_DIM);
+				final String fid = str(pre, "id");
+				final int fp = i(pre, "buy");
+				final String fn = str(pre, "name");
+				clickable(px - 3, topY + 12, 34, 43, () -> {
+					casinoTarget = fid;
+					casinoTargetPrice = fp;
+					casinoTargetName = fn;
+					shownBp = 0;
+				});
+				pk++;
+			}
+			UiKit.label(ctx, textRenderer, x + PW - 110, topY + 50, "или выбери свою →", UiKit.COL_ACCENT);
 		} else {
 			Item t = Registries.ITEM.get(Identifier.tryParse(casinoTarget));
-			if (t != null) ctx.drawItem(t.getDefaultStack(), x + PW - 108, topY + 6);
-			UiKit.label(ctx, textRenderer, x + PW - 88, topY + 5, trim(casinoTargetName, 12), UiKit.COL_TEXT);
-			UiKit.label(ctx, textRenderer, x + PW - 88, topY + 15, "Ценность: " + casinoTargetPrice, UiKit.COL_YELLOW);
+			if (t != null) ctx.drawItem(t.getDefaultStack(), x + PW - 108, topY + 14);
+			UiKit.label(ctx, textRenderer, x + PW - 88, topY + 13, trim(casinoTargetName, 12), UiKit.COL_TEXT);
+			UiKit.label(ctx, textRenderer, x + PW - 88, topY + 23, "Ценность: " + casinoTargetPrice, UiKit.COL_YELLOW);
 			UiKit.label(ctx, textRenderer, x + PW - 108, topY + 45, "сменить →", UiKit.COL_TEXT_DIM);
 		}
-		clickable(x + PW - 116, topY, 108, 60, () -> {
+		// регионы: вся карточка — только когда цель уже выбрана (иначе съест пресеты)
+		if (casinoTarget != null) {
+			clickable(x + PW - 116, topY, 108, 46, () -> {
+				casinoPickMode = true;
+				clearAndInit();
+			});
+		}
+		clickable(x + PW - 116, topY + 46, 108, 14, () -> {
 			casinoPickMode = true;
 			clearAndInit();
 		});
@@ -439,9 +491,20 @@ public class PhoneScreen extends CraftNetScreen {
 		long bp = liveBp;
 		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= 100;
 		int btnY = y + 66;
-		UiKit.button(ctx, textRenderer, x + 8, btnY, 130, 18,
-				animating ? "КРУТИМ…" : "ПРОКРУТИТЬ", mx, my, canSpin && !animating);
+		String spinText = animating ? "КРУТИМ…"
+				: staked.isEmpty() ? "← шаг 1: ставка"
+				: casinoTarget == null ? "← шаг 2: цель"
+				: bp < 100 ? "ставки < 1% шанса"
+				: "3. КРУТИТЬ!";
+		UiKit.button(ctx, textRenderer, x + 8, btnY, 130, 18, spinText, mx, my, canSpin && !animating);
+		// пульс рамки — зовёт нажать, когда всё готово
 		if (canSpin && !animating) {
+			int alpha = 0x60 + (int) (0x50 * (0.5 + 0.5 * Math.sin(now / 5.0)));
+			int col = (alpha << 24) | 0x3FB950;
+			ctx.drawHorizontalLine(x + 6, x + 139, btnY - 2, col);
+			ctx.drawHorizontalLine(x + 6, x + 139, btnY + 19, col);
+			ctx.drawVerticalLine(x + 6, btnY - 2, btnY + 19, col);
+			ctx.drawVerticalLine(x + 139, btnY - 2, btnY + 19, col);
 			clickable(x + 8, btnY, 130, 18, () -> {
 				NbtCompound a = new NbtCompound();
 				a.putString("target", casinoTarget);
@@ -463,7 +526,7 @@ public class PhoneScreen extends CraftNetScreen {
 
 		// ================= инвентарь (источник ставок) =================
 		UiKit.label(ctx, textRenderer, x + 8, y + 92,
-				"кликни предмет, чтобы добавить в ставку:", UiKit.COL_TEXT_DIM);
+				"инвентарь: клик → в ставку · Shift → ×8", UiKit.COL_TEXT_DIM);
 		var src = rows(cz, "src");
 		if (src.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 8, y + 106,
@@ -483,7 +546,8 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, gx + 21, gy + 12, i(e, "price") + "cr", UiKit.COL_TEXT_DIM);
 			UiKit.label(ctx, textRenderer, gx + 3, gy + 19, trim(str(e, "name"), 6), UiKit.COL_TEXT_DIM);
 			final String fid = str(e, "id");
-			clickable(gx, gy, cell - 4, 28, () -> stakeAction(fid, 1));
+			clickable(gx, gy, cell - 4, 28,
+					() -> stakeAction(fid, net.minecraft.client.gui.screen.Screen.hasShiftDown() ? 8 : 1));
 		}
 
 		// ================= результат / подсказка =================
@@ -731,6 +795,17 @@ public class PhoneScreen extends CraftNetScreen {
 		if (mc2 != null && mc2.getSoundManager() != null) {
 			mc2.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(ev, volume));
 		}
+	}
+
+	/** Линейный бленд двух ARGB-цветов (k=0 → a, k=1 → b). */
+	private static int blend(int a, int b, float k) {
+		int ch = (int) (k * 255);
+		int ar = (a >>> 24) & 0xFF, br = (b >>> 24) & 0xFF;
+		int al = Math.min(255, Math.max(ar, br));
+		int r = ((a >>> 16) & 0xFF) + (ch * (((b >>> 16) & 0xFF) - ((a >>> 16) & 0xFF))) / 255;
+		int g = ((a >>> 8) & 0xFF) + (ch * (((b >>> 8) & 0xFF) - ((a >>> 8) & 0xFF))) / 255;
+		int bl = (a & 0xFF) + (ch * ((b & 0xFF) - (a & 0xFF))) / 255;
+		return (al << 24) | (r << 16) | (g << 8) | bl;
 	}
 
 	// ------------------------------ Барахолка ------------------------------
