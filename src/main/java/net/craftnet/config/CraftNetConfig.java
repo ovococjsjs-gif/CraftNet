@@ -67,16 +67,18 @@ public final class CraftNetConfig {
 	/** Завод (мини-игра): деталей в схеме (мин/макс). */
 	public int jobFactoryMinParts = 3;
 	public int jobFactoryMaxParts = 5;
-	/** Цеховой заказ: оплата = clamp(round(материалы × matsPct/100) + bonus, minPay..maxPay). */
-	public int jobOrderFactoryMatsPct = 170;
-	public int jobOrderFactoryBonus = 50;
+	/** Цеховой заказ: оплата = clamp(round(материалы × matsPct/100) + bonus, minPay..maxPay).
+	 *  Дефолты подобраны симуляцией (tools/simulate_jobs.py): медианный заказ ≈ центр окна,
+	 *  клампы срабатывают только на ~20% экстремальных составов. */
+	public int jobOrderFactoryMatsPct = 100;
+	public int jobOrderFactoryBonus = 90;
 	public int jobOrderFactoryMinPay = 195;
 	public int jobOrderFactoryMaxPay = 285;
-	/** Повар: оплата по той же формуле (медианный заказ ≈ середина окна). */
-	public int jobOrderCookMatsPct = 125;
-	public int jobOrderCookBonus = 12;
-	public int jobOrderCookMinPay = 110;
-	public int jobOrderCookMaxPay = 145;
+	/** Повар: оплата по той же формуле (медианный заказ ≈ центр окна). */
+	public int jobOrderCookMatsPct = 45;
+	public int jobOrderCookBonus = 60;
+	public int jobOrderCookMinPay = 65;
+	public int jobOrderCookMaxPay = 140;
 
 	// ---- банк ----
 	/** Ежедневный процент на остаток, % (0.15 = 0.15%). */
