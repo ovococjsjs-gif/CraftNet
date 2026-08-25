@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "net.craftnet.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"StructurePoolAccessor"
+	],
+	"client": [
+		"InGameHudMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

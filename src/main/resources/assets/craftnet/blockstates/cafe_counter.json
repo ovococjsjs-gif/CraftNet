@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "craftnet:block/cafe_counter"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "craftnet:block/tower_core"
+    }
+  }
+}

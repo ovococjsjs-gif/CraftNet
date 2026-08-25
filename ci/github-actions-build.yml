@@ -1,0 +1,57 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# contents: write нужен шагу отчёта, чтобы публиковать комментарий к коммиту.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Стек 1.21.11-эры: Loom(remap) + Gradle 9.x + JDK 25 (как в официальном
+      # шаблоне fabric-example-mod, ветка 1.21.11). Компиляция — в target 21.
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.1"
+
+      # Вся логика пайплайна — в скриптах ci/ внутри репозитория: их можно
+      # править обычным пушем кода, этот workflow потом менять не понадобится.
+      - name: Build CraftNet
+        run: bash ci/ci-build.sh
+
+      - name: Report build log
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_JOB_STATUS: ${{ job.status }}
+        run: bash ci/ci-report.sh
+
+      - name: Upload jar
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: craftnet-jar
+          path: build/libs/*.jar
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log

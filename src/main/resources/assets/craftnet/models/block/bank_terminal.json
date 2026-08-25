@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "craftnet:block/bank_terminal_top",
+    "side": "craftnet:block/bank_terminal_side"
+  }
+}
