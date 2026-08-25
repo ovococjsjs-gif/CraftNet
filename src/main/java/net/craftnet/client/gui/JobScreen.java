@@ -45,7 +45,7 @@ public class JobScreen extends CraftNetScreen {
 		UiKit.card(ctx, x, y, PW, PH, UiKit.COL_PANEL);
 		ctx.drawCenteredTextWithShadow(textRenderer, title, x + PW / 2, y - 12, UiKit.COL_ACCENT);
 
-		String bal = lng(data, "balance") + " CR";
+		String bal = UiKit.fmt(lng(data, "balance")) + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 10 - textRenderer.getWidth(bal), y + 6, UiKit.COL_YELLOW, false);
 
 		if (i(data, "hasJob") == 1) {

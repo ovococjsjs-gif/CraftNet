@@ -67,6 +67,11 @@ public final class MarketManager {
 		return id;
 	}
 
+	/** Версия списка лотов — на ней держится кэш clientRows (L9). */
+	private static void bumpSeq(MarketState st) {
+		st.data().putLong("seq", Nbt2.lng(st.data(), "seq") + 1);
+	}
+
 	public static int listingsOf(MinecraftServer server, UUID seller) {
 		int n = 0;
 		for (NbtCompound l : all(server)) {
@@ -116,6 +121,7 @@ public final class MarketManager {
 		NbtList list = st.data().getListOrEmpty("lots");
 		list.add(l);
 		st.data().put("lots", list);
+		bumpSeq(st);
 		st.markDirty();
 		StatsManager.bump(server, player.getUuid(), StatsManager.MARKET_LISTED, 1);
 		return 0;
@@ -166,6 +172,7 @@ public final class MarketManager {
 
 		list.remove(idx);
 		st.data().put("lots", list);
+		bumpSeq(st);
 		st.markDirty();
 		StatsManager.bump(server, buyer.getUuid(), StatsManager.MARKET_BOUGHT, 1);
 		StatsManager.addXp(server, buyer.getUuid(), 3);
@@ -187,6 +194,7 @@ public final class MarketManager {
 		for (int i = toRemove.size() - 1; i >= 0; i--) list.remove(toRemove.get(i).intValue());
 		if (!toRemove.isEmpty()) {
 			st.data().put("lots", list);
+			bumpSeq(st);
 			st.markDirty();
 		}
 		return toRemove.size();
@@ -209,6 +217,7 @@ public final class MarketManager {
 		for (int i = toRemove.size() - 1; i >= 0; i--) list.remove(toRemove.get(i).intValue());
 		if (!toRemove.isEmpty()) {
 			st.data().put("lots", list);
+			bumpSeq(st);
 			st.markDirty();
 		}
 	}
@@ -226,8 +235,16 @@ public final class MarketManager {
 		}
 	}
 
+	// кэш клиентских строк: декодирование лотов — самое дорогое в sync-цикле (L9)
+	private static volatile MinecraftServer cacheServer;
+	private static volatile long cacheSeq = -1L;
+	private static volatile NbtList cacheRows;
+
 	/** Строки для телефона: [{lid,itemId,name,count,price,seller}] — свежие первыми. */
 	public static NbtList clientRows(MinecraftServer server) {
+		long seq = Nbt2.lng(get(server).data(), "seq");
+		NbtList cached = cacheRows;
+		if (cached != null && cacheServer == server && cacheSeq == seq) return cached;
 		NbtList out = new NbtList();
 		List<NbtCompound> all = all(server);
 		for (int i = all.size() - 1; i >= 0; i--) {
@@ -243,6 +260,9 @@ public final class MarketManager {
 			c.putString("seller", Nbt2.str(l, "sellerName"));
 			out.add(c);
 		}
+		cacheServer = server;
+		cacheSeq = seq;
+		cacheRows = out;
 		return out;
 	}
 }

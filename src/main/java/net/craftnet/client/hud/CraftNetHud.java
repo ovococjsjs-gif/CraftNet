@@ -60,6 +60,9 @@ public final class CraftNetHud {
 	public static void render(DrawContext ctx) {
 		MinecraftClient mc = MinecraftClient.getInstance();
 		if (mc.player == null || mc.world == null || mc.options.hudHidden) return;
+		// L2/L14: без пушей больше 10 с (обрыв, лаг сервера) — гасим HUD,
+		// не показываем устаревшие баланс/сеть
+		if (updatedTick < 0 || mc.world.getTime() - updatedTick > 200) return;
 
 		SignalLevel lvl = SignalLevel.byTier(tier);
 		int w = ctx.getScaledWindowWidth();
@@ -101,7 +104,7 @@ public final class CraftNetHud {
 
 		int gpsCol = gpsOk ? 0xFF55FF55 : 0xFFFF5555;
 		ctx.drawText(mc.textRenderer, Text.literal("GPS"), x + pw - 26, y + 5, gpsCol, false);
-		String bal = balance + " CR";
+		String bal = UiKit.fmt(balance) + " CR";
 		ctx.drawText(mc.textRenderer, Text.literal(bal), x + pw - 6 - mc.textRenderer.getWidth(bal), y + 14,
 				UiKit.COL_YELLOW, false);
 

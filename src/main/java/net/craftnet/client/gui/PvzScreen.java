@@ -27,6 +27,7 @@ public class PvzScreen extends CraftNetScreen {
 	private int claimsPage;
 	private int sellPage;
 	private UiKit.TextInput priceInput;
+	private UiKit.TextInput countInput;
 
 	public PvzScreen(NbtCompound data) {
 		super("pvz", Text.translatable("craftnet.pvz.title"), data);
@@ -36,9 +37,14 @@ public class PvzScreen extends CraftNetScreen {
 	protected void init() {
 		super.init();
 		inputs.clear();
+		// [шт][цена/шт] — пара полей лота барахолки: количество и цена за штуку
+		countInput = new UiKit.TextInput(px() + PW / 2 + 2 + (PW / 2 - 12) - 94, py() + COLS_TOP + 3,
+				32, "шт", true);
+		countInput.maxLen = 2;
 		priceInput = new UiKit.TextInput(px() + PW / 2 + 2 + (PW / 2 - 12) - 60, py() + COLS_TOP + 3,
 				54, "цена/шт", true);
 		priceInput.maxLen = 7;
+		inputs.add(countInput);
 		inputs.add(priceInput);
 	}
 
@@ -72,7 +78,7 @@ public class PvzScreen extends CraftNetScreen {
 
 		// заголовок
 		UiKit.label(ctx, textRenderer, x + 10, y + 6, "ПВЗ · пункт выдачи", UiKit.COL_ACCENT);
-		String bal = lng(data, "balance") + " CR";
+		String bal = UiKit.fmt(lng(data, "balance")) + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 10 - textRenderer.getWidth(bal), y + 6,
 				UiKit.COL_YELLOW, false);
 		ctx.drawHorizontalLine(x, x + PW - 1, y + 16, UiKit.COL_LINE);
@@ -194,8 +200,10 @@ public class PvzScreen extends CraftNetScreen {
 	private void renderSell(DrawContext ctx, int x, int y, double mx, double my) {
 		int w = PW / 2 - 12;
 		UiKit.card(ctx, x, y, w, COLS_H, UiKit.COL_PANEL_HI);
-		UiKit.label(ctx, textRenderer, x + 6, y + 5, "Продать из инвентаря", UiKit.COL_ACCENT);
-		UiKit.label(ctx, textRenderer, x + 6, y + 14, "деньги — в ленте ниже ↓", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 6, y + 5, "Продажа", UiKit.COL_ACCENT);
+		// UX-5: подпись полей и кнопок — раньше было неочевидно, куда вводить цену лота
+		UiKit.label(ctx, textRenderer, x + 6, y + 14, "всё — сразу ↓, ₽ — лотом (шт · цена ↑)",
+				UiKit.COL_TEXT_DIM);
 		var sell = rows(data, "sell");
 		if (sell.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 8, y + 40, "Нечего продавать —", UiKit.COL_TEXT_DIM);
@@ -214,12 +222,14 @@ public class PvzScreen extends CraftNetScreen {
 			final int have = i(c, "count");
 			UiKit.button(ctx, textRenderer, x + w - 64, ry + 5, 30, 13, "всё", mx, my, have >= 1);
 			clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(fid, have));
+			// пустое поле «шт» = выставить всё (до 64) — поэтому кнопке хватит цены
 			UiKit.button(ctx, textRenderer, x + w - 30, ry + 5, 18, 13, "₽", mx, my,
 					have >= 1 && price() > 0);
 			clickable(x + w - 30, ry + 5, 18, 13, () -> {
 				NbtCompound a = new NbtCompound();
 				a.putString("id", fid);
 				a.putInt("price", price());
+				a.putInt("count", lotCount() > 0 ? lotCount() : 64); // пусто = всё (до 64)
 				send("market_list", a);
 			});
 			ry += ROW_STEP - 3; // sell: шаг 25
@@ -249,6 +259,30 @@ public class PvzScreen extends CraftNetScreen {
 		} catch (NumberFormatException e) {
 			return 0;
 		}
+	}
+
+	/** Количество лота (0 = поле пустое = «всё»). */
+	private int lotCount() {
+		try {
+			return countInput == null || countInput.value.isBlank() ? 0
+					: Integer.parseInt(countInput.value.trim());
+		} catch (NumberFormatException e) {
+			return 0;
+		}
+	}
+
+	/** UX: колесо мыши листает колонку под курсором (слева посылки, справа продажа). */
+	@Override
+	protected boolean onScroll(double mx, double my, double dir) {
+		int step = dir < 0 ? 1 : -1;
+		if (mx < px() + PW / 2) {
+			int pages = pagesOf(rows(data, "claims").size());
+			claimsPage = Math.max(0, Math.min(pages - 1, claimsPage + step));
+		} else {
+			int pages = pagesOf(rows(data, "sell").size());
+			sellPage = Math.max(0, Math.min(pages - 1, sellPage + step));
+		}
+		return true;
 	}
 
 	private void sellAction(String id, int n) {

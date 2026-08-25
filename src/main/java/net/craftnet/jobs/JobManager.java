@@ -691,7 +691,12 @@ public final class JobManager {
 				p.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
 						net.minecraft.entity.effect.StatusEffects.MINING_FATIGUE, 80, 0, false, false, false));
 			} else if (!carrying && has) {
-				p.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOWNESS);
+				// L1: снимаем только НАШЕ замедление (amplifier 1, короткое) —
+				// чужой Slowness от зелий/мобов не трогаем
+				var eff = p.getStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOWNESS);
+				if (eff != null && eff.getAmplifier() == 1 && eff.getDuration() <= 100) {
+					p.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOWNESS);
+				}
 			}
 		}
 	}

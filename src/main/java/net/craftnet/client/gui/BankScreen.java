@@ -45,7 +45,7 @@ public class BankScreen extends CraftNetScreen {
 		// балансы
 		UiKit.card(ctx, x + 8, y + 22, PW - 16, 30, UiKit.COL_PANEL_HI);
 		UiKit.label(ctx, textRenderer, x + 16, y + 28, "На счёте", UiKit.COL_TEXT_DIM);
-		String bal = lng(data, "balance") + " CR";
+		String bal = UiKit.fmt(lng(data, "balance")) + " CR";
 		ctx.drawText(textRenderer, Text.literal(bal), x + PW - 16 - textRenderer.getWidth(bal), y + 28,
 				UiKit.COL_YELLOW, false);
 		UiKit.label(ctx, textRenderer, x + 16, y + 40, "Банкнотами: " + lng(data, "banknotes") + " CR",
@@ -61,8 +61,10 @@ public class BankScreen extends CraftNetScreen {
 			final int ci2 = ci;
 			clickable(bx, y + 70, 25, 13, () -> {
 				long cur = parse(amount.value);
-				if (ci2 == 3) amount.value = String.valueOf(lng(data, "balance"));
-				else amount.value = String.valueOf(cur + new long[]{10, 100, 1000}[ci2]);
+				// L13: не вылезаем за maxLen=9 цифр (сервер всё равно клампит 100 000)
+				long lim = (long) Math.pow(10, amount.maxLen) - 1;
+				if (ci2 == 3) amount.value = String.valueOf(Math.min(lng(data, "balance"), lim));
+				else amount.value = String.valueOf(Math.min(cur + new long[]{10, 100, 1000}[ci2], lim));
 			});
 		}
 

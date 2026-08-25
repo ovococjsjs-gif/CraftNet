@@ -18,7 +18,7 @@ import net.craftnet.mixin.StructurePoolAccessor;
 
 /**
  * Инъекция наших NBT-зданий в пулы домов всех типов деревень.
- * Запускаем на SERVER_STARTED и END_DATA_PACK_CONTENTS_RELOAD — пулы
+ * Запускаем на SERVER_STARTED и END_DATA_PACK_RELOAD — пулы
  * к этим моментам собраны (и пересобраны) из датапаков.
  *
  * ГАРАНТИЯ заселения деревень при этом — не здесь: программное размещение

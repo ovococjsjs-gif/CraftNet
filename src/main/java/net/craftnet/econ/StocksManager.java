@@ -112,17 +112,21 @@ public final class StocksManager {
 		boolean dirty = false;
 		for (Company c : Company.values()) {
 			NbtCompound e = comp.getCompound(c.id).orElseGet(NbtCompound::new);
+			boolean eDirty = false; // L11: флаг — на компанию, а не на весь цикл
 			if (Nbt2.dbl(e, "price") <= 0) {
 				double start = (c.lo + c.hi) / 2.0 * (1 + RNG.nextGaussian() * 0.03);
 				e.putDouble("price", start);
 				e.putIntArray("hist", new int[]{(int) Math.round(start * 100)});
-				dirty = true;
+				eDirty = true;
 			}
 			if (Nbt2.dbl(e, "anchor") <= 0) {
 				e.putDouble("anchor", clampPrice(Nbt2.dbl(e, "price"), c));
+				eDirty = true;
+			}
+			if (eDirty) {
+				comp.put(c.id, e);
 				dirty = true;
 			}
-			if (dirty) comp.put(c.id, e);
 		}
 		NbtCompound meta = Nbt2.sub(st.data(), "meta");
 		if (!meta.contains("lastDivDay")) {
@@ -302,7 +306,7 @@ public final class StocksManager {
 	}
 
 	public static double price(MinecraftServer server, String id) {
-		return price(comps(get(server).data()).getCompound(id.toUpperCase()).orElseGet(NbtCompound::new));
+		return price(comps(get(server).data()).getCompound(id.toUpperCase(java.util.Locale.ROOT)).orElseGet(NbtCompound::new));
 	}
 
 	public static double prevPrice(MinecraftServer server, String id) {
@@ -312,21 +316,21 @@ public final class StocksManager {
 	}
 
 	public static int[] history(MinecraftServer server, String id) {
-		return comps(get(server).data()).getCompound(id.toUpperCase()).orElseGet(NbtCompound::new)
+		return comps(get(server).data()).getCompound(id.toUpperCase(java.util.Locale.ROOT)).orElseGet(NbtCompound::new)
 				.getIntArray("hist").orElse(new int[0]);
 	}
 
 	public static int owned(MinecraftServer server, UUID player, String id) {
 		return Nbt2.sub(get(server).data(), "hold")
 				.getCompound(player.toString()).orElseGet(NbtCompound::new)
-				.getInt(id.toUpperCase(), 0);
+				.getInt(id.toUpperCase(java.util.Locale.ROOT), 0);
 	}
 
 	private static void setOwned(MinecraftServer server, UUID player, String id, int n) {
 		StocksState st = get(server);
 		NbtCompound hold = Nbt2.sub(st.data(), "hold");
 		NbtCompound rec = hold.getCompound(player.toString()).orElseGet(NbtCompound::new);
-		rec.putInt(id.toUpperCase(), Math.max(0, n));
+		rec.putInt(id.toUpperCase(java.util.Locale.ROOT), Math.max(0, n));
 		hold.put(player.toString(), rec);
 		st.data().put("hold", hold);
 		st.markDirty();

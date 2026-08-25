@@ -76,9 +76,37 @@ public abstract class CraftNetScreen extends Screen {
 	@Override
 	public boolean keyPressed(KeyInput input) {
 		for (UiKit.TextInput in : inputs) {
-			if (in.focused && in.key(input.key())) return true;
+			if (!in.focused) continue;
+			// L6: Ctrl+V — вставка из буфера
+			if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_V && ctrlDown()) {
+				in.paste();
+				return true;
+			}
+			if (in.key(input.key())) return true;
 		}
 		return super.keyPressed(input);
+	}
+
+	/** Нажат ли Ctrl (левый/правый) — для Ctrl+V в инпутах. */
+	protected static boolean ctrlDown() {
+		var mc = net.minecraft.client.MinecraftClient.getInstance();
+		if (mc == null || mc.getWindow() == null) return false;
+		return net.minecraft.client.util.InputUtil.isKeyPressed(mc.getWindow(),
+				net.minecraft.client.util.InputUtil.GLFW_KEY_LEFT_CONTROL)
+				|| net.minecraft.client.util.InputUtil.isKeyPressed(mc.getWindow(),
+						net.minecraft.client.util.InputUtil.GLFW_KEY_RIGHT_CONTROL);
+	}
+
+	/** L4/UX: колесо мыши листает списки — экраны реализуют onScroll. */
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (verticalAmount != 0 && onScroll(mouseX, mouseY, verticalAmount)) return true;
+		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+	}
+
+	/** @return true, если колесо обработано (листание страниц и т.п.). */
+	protected boolean onScroll(double mx, double my, double dir) {
+		return false;
 	}
 
 	/**

@@ -75,6 +75,19 @@ public final class UiKit {
 		ctx.drawText(tr, Text.literal(s), x, y, color, false);
 	}
 
+	/** Группировка разрядов длинных сумм: 1234567 → "1 234 567" (узкие пробелы не ломают вёрстку). */
+	public static String fmt(long v) {
+		String s = Long.toString(v);
+		boolean neg = s.startsWith("-");
+		if (neg) s = s.substring(1);
+		StringBuilder out = new StringBuilder();
+		for (int i = 0; i < s.length(); i++) {
+			if (i > 0 && (s.length() - i) % 3 == 0) out.append(' ');
+			out.append(s.charAt(i));
+		}
+		return (neg ? "-" : "") + out;
+	}
+
 	/** Лёгкое текстовое поле без виджетов. */
 	public static final class TextInput {
 		public int x, y, w;
@@ -138,6 +151,24 @@ public final class UiKit {
 				return true;
 			}
 			return true; // всё остальное глотаем, пока в фокусе
+		}
+
+		/** Ctrl+V: вставить из буфера (с фильтром цифр/длины). L6. */
+		public void paste() {
+			if (!focused) return;
+			String clip;
+			try {
+				clip = net.minecraft.client.MinecraftClient.getInstance().keyboard.getClipboard();
+			} catch (Throwable t) {
+				return;
+			}
+			if (clip == null) return;
+			for (int i = 0; i < clip.length() && value.length() < maxLen; i++) {
+				char c = clip.charAt(i);
+				if (c < 32) continue; // управляющие
+				if (digitsOnly && (c < '0' || c > '9')) continue;
+				value += c;
+			}
 		}
 	}
 }

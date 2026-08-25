@@ -45,7 +45,9 @@ public final class ServerActions {
 
 	private static final Map<UUID, OpenCtx> OPEN = new java.util.concurrent.ConcurrentHashMap<>();
 
-	private static final int SHOP_PAGE_SIZE = 16;
+	// ровно столько, сколько реально рисуют экраны телефона — иначе пейджер
+	// «перепрыгивал» невидимые позиции (было 16 при 6 видимых строках)
+	private static final int SHOP_PAGE_SIZE = 6;
 
 	// ============================== открытие / синхронизация ==============================
 
@@ -78,9 +80,9 @@ public final class ServerActions {
 		return BlockPos.fromLong(ctx.station()).getSquaredDistance(player.getBlockPos()) <= maxDist * maxDist;
 	}
 
-	/** Периодическая пересинхронизация открытых экранов. */
+	/** Периодическая пересинхронизация открытых экранов (раз в секунду). */
 	public static void tickOpenScreens(MinecraftServer server, long tick) {
-		if (tick % 10 != 0) return;
+		if (tick % 20 != 0) return;
 		for (Map.Entry<UUID, OpenCtx> e : OPEN.entrySet()) {
 			ServerPlayerEntity p = server.getPlayerManager().getPlayer(e.getKey());
 			if (p == null) {
@@ -385,6 +387,7 @@ public final class ServerActions {
 			case "market_list" -> {
 				String id = args.getString("id", "");
 				int price = args.getInt("price", 0);
+				int lotCount = Math.max(1, Math.min(64, args.getInt("count", 64)));
 				var near2 = VillageManager.nearest(server, player.getBlockPos(), true);
 				int vx = player.getBlockPos().getX(), vy = 64, vz = player.getBlockPos().getZ();
 				String vname = "ПВЗ";
@@ -395,7 +398,7 @@ public final class ServerActions {
 					vz = net.craftnet.util.Nbt2.i(v2, "cz");
 					vname = net.craftnet.util.Nbt2.str(v2, "name");
 				}
-				int rc = MarketManager.create(server, player, id, 64, price, vx, vy, vz, vname);
+				int rc = MarketManager.create(server, player, id, lotCount, price, vx, vy, vz, vname);
 				switch (rc) {
 					case 0 -> player.sendMessage(Text.translatable("craftnet.market.listed"), false);
 					case 1 -> player.sendMessage(
@@ -546,10 +549,10 @@ public final class ServerActions {
 			int y = p.getBlockPos().getY();
 			boolean sky = p.getEntityWorld().isSkyVisible(p.getBlockPos());
 			d.putInt("gps", (y >= 55 || sky) ? 1 : 0);
-			d.putLong("bal", MoneyManager.balance(server, p.getUuid()));
+			long bal = MoneyManager.balance(server, p.getUuid());
+			d.putLong("bal", bal);
 			// «Миллионер» и будущие balance-driven ачивки живут off-HUD-пульса
-			StatsManager.set(server, p.getUuid(), StatsManager.BALANCE_NOW,
-					MoneyManager.balance(server, p.getUuid()));
+			StatsManager.set(server, p.getUuid(), StatsManager.BALANCE_NOW, bal);
 			NbtCompound nav = JobManager.navTarget(server, p.getUuid());
 			if (!nav.isEmpty()) d.put("jobNav", nav);
 			ServerPlayNetworking.send(p, new ModPackets.HudSyncS2CPayload(d));
@@ -621,6 +624,15 @@ public final class ServerActions {
 			tx.append(s);
 		}
 		d.putString("tx", tx.toString());
+
+		// UX: имена онлайн-игроков для подсказок получателя перевода (себя не шлём)
+		StringBuilder on = new StringBuilder();
+		for (ServerPlayerEntity pl : server.getPlayerManager().getPlayerList()) {
+			if (pl.getUuid().equals(player.getUuid())) continue;
+			if (on.length() > 0) on.append('\n');
+			on.append(pl.getName().getString());
+		}
+		d.putString("online", on.toString());
 
 		// магазин — с учётом текущего запроса игрока
 		OpenCtx ctx = OPEN.get(player.getUuid());
