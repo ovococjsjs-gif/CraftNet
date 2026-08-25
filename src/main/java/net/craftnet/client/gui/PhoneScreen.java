@@ -20,7 +20,7 @@ import net.craftnet.client.GpsMapRenderer;
  */
 public class PhoneScreen extends CraftNetScreen {
 
-	private enum Tab {HOME, SHOP, MARKET, CASINO, STOCKS, GPS, BANK}
+	private enum Tab {HOME, PROFILE, SHOP, MARKET, CASINO, STOCKS, GPS, BANK}
 
 	private static final int PW = 300;
 	private static final int PH = 240;
@@ -129,21 +129,23 @@ public class PhoneScreen extends CraftNetScreen {
 
 		renderStatusBar(ctx, x, y, mx, my);
 
-		// панель вкладок — иконки приложений
+		// панель вкладок — иконки приложений (8 штук, шаг 36)
 		int ty = y + 15;
-		int tStep = 40;
+		int tStep = 36;
 		drawTabIcon(ctx, x + 8, ty, Items.COMPASS, Tab.HOME, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep, ty, Items.EMERALD, Tab.SHOP, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep * 2, ty, Items.CHEST, Tab.MARKET, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep * 3, ty, Items.TARGET, Tab.CASINO, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep * 4, ty, Items.PAPER, Tab.STOCKS, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep * 5, ty, Items.FILLED_MAP, Tab.GPS, mx, my);
-		drawTabIcon(ctx, x + 8 + tStep * 6, ty, Items.GOLD_INGOT, Tab.BANK, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep, ty, Items.PLAYER_HEAD, Tab.PROFILE, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 2, ty, Items.EMERALD, Tab.SHOP, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 3, ty, Items.CHEST, Tab.MARKET, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 4, ty, Items.TARGET, Tab.CASINO, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 5, ty, Items.PAPER, Tab.STOCKS, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 6, ty, Items.FILLED_MAP, Tab.GPS, mx, my);
+		drawTabIcon(ctx, x + 8 + tStep * 7, ty, Items.GOLD_INGOT, Tab.BANK, mx, my);
 		ctx.drawHorizontalLine(x, x + PW - 1, y + 37, UiKit.COL_LINE);
 
 		int cy = y + 40;
 		switch (tab) {
 			case HOME -> renderHome(ctx, x, cy, mx, my);
+			case PROFILE -> renderProfile(ctx, x, cy, mx, my);
 			case SHOP -> renderShop(ctx, x, cy, mx, my);
 			case MARKET -> renderMarket(ctx, x, cy, mx, my);
 			case CASINO -> renderCasino(ctx, x, cy, mx, my);
@@ -220,6 +222,7 @@ public class PhoneScreen extends CraftNetScreen {
 
 	private void renderHome(DrawContext ctx, int x, int y, int mx, int my) {
 		App[] apps = {
+				new App("Профиль", Items.PLAYER_HEAD.getDefaultStack(), Tab.PROFILE),
 				new App("Магазин", Items.EMERALD.getDefaultStack(), Tab.SHOP),
 				new App("Барахолка", Items.CHEST.getDefaultStack(), Tab.MARKET),
 				new App("Биржа", Items.PAPER.getDefaultStack(), Tab.STOCKS),
@@ -235,9 +238,11 @@ public class PhoneScreen extends CraftNetScreen {
 			ctx.drawItem(app.icon(), ax + 8, ay + 17);
 			UiKit.label(ctx, textRenderer, ax + 28, ay + 13, app.name(), UiKit.COL_TEXT);
 			String sub = switch (app.tab()) {
+				case PROFILE -> "ур." + i(sub(data, "profile"), "lvl")
+						+ " · " + trim(str(sub(data, "profile"), "rank"), 9);
 				case SHOP -> i(data, "signal") >= 1 ? "витрина" : "нужен 2G";
 				case MARKET -> i(data, "signal") >= 1 ? "лотов: " + i(sub(data, "market"), "total") : "нужен 2G";
-				case STOCKS -> i(data, "signal") >= 2 ? "5 компаний" : "нужен 3G";
+				case STOCKS -> stocksUtc() ? "5 компаний" : "нужен 3G";
 				case GPS -> i(data, "gpsOk") == 1 ? "онлайн" : "офлайн";
 				case BANK -> lng(data, "balance") + " CR";
 				case CASINO -> luckSub();
@@ -247,24 +252,31 @@ public class PhoneScreen extends CraftNetScreen {
 					(app.tab() == Tab.GPS && i(data, "gpsOk") != 1)
 							|| (app.tab() == Tab.SHOP && i(data, "signal") < 1)
 							|| (app.tab() == Tab.MARKET && i(data, "signal") < 1)
-							|| (app.tab() == Tab.STOCKS && i(data, "signal") < 2)
+							|| (app.tab() == Tab.STOCKS && !stocksUtc())
 							? UiKit.COL_RED : UiKit.COL_TEXT_DIM);
 			clickable(ax, ay, 78, 50, () -> switchTab(app.tab()));
 			idx++;
 		}
-		// карточка сети
-		UiKit.card(ctx, x + 14, y + 118, PW - 28, 40, UiKit.COL_PANEL_HI);
-		UiKit.label(ctx, textRenderer, x + 22, y + 127, "Текущая сеть: " + signalLabel(),
+		// карточка сети (компактная, в строку под сеткой 3×3)
+		UiKit.card(ctx, x + 14, y + 168, PW - 28, 24, UiKit.COL_PANEL_HI);
+		UiKit.label(ctx, textRenderer, x + 22, y + 174, "Сеть: " + signalLabel(),
 				i(data, "signal") > 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
 		String vill = str(data, "village");
 		if (!vill.isEmpty()) {
-			UiKit.label(ctx, textRenderer, x + 22, y + 141,
-					"Точка: " + vill + " (" + i(data, "dist") + " м)", UiKit.COL_TEXT_DIM);
+			String tlvTxt = i(data, "tlv") > 0 ? " · вышка ур." + i(data, "tlv") : "";
+			UiKit.label(ctx, textRenderer, x + 22, y + 184,
+					trim(vill, 22) + " (" + i(data, "dist") + " м)" + tlvTxt,
+					i(data, "tlv") > 0 ? UiKit.COL_YELLOW : UiKit.COL_TEXT_DIM);
 		} else if (i(data, "offVillage") == 1) {
-			UiKit.label(ctx, textRenderer, x + 22, y + 141, "Деревня офлайн: сломана вышка!", UiKit.COL_RED);
+			UiKit.label(ctx, textRenderer, x + 22, y + 184, "Деревня офлайн: сломана вышка!", UiKit.COL_RED);
 		} else {
-			UiKit.label(ctx, textRenderer, x + 22, y + 141, "Вышки не обнаружены поблизости", UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 22, y + 184, "Вышки не обнаружены поблизости", UiKit.COL_TEXT_DIM);
 		}
+	}
+
+	/** Доступна ли торговля на бирже прямо сейчас (3G+, или 2G под «умной вышкой» ур.4). */
+	private boolean stocksUtc() {
+		return i(data, "signal") >= 2 || (i(data, "tlv") >= 4 && i(data, "signal") >= 1);
 	}
 
 	// ------------------------------ Магазин ------------------------------
@@ -276,6 +288,7 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 		NbtCompound shop = sub(data, "shop");
 		var entries = rows(shop, "entries");
+		int disc = i(data, "shopDisc"); // скидка «умной вышки» ур.4, %
 
 		// счётчик количества (верхняя строка, справа от поиска)
 		UiKit.label(ctx, textRenderer, x + PW - 78, y + 7, "×" + buyCount, UiKit.COL_TEXT);
@@ -294,9 +307,11 @@ public class PhoneScreen extends CraftNetScreen {
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
 			UiKit.label(ctx, textRenderer, x + 34, ry + 2, trim(str(e, "name"), 26), UiKit.COL_TEXT);
-			long total = (long) i(e, "buy") * buyCount;
+			// сервер считает итог так же: round(buy*count*(1-disc/100)) — сходится буква в букву
+			long total = Math.round((long) i(e, "buy") * buyCount * (100 - disc) / 100.0);
 			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
-					i(e, "buy") + " CR/шт · продажа " + i(e, "sell"), UiKit.COL_TEXT_DIM);
+					i(e, "buy") + " CR/шт" + (disc > 0 ? " (−" + disc + "%)" : "")
+							+ " · продажа " + i(e, "sell"), UiKit.COL_TEXT_DIM);
 			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
 					lng(data, "balance") >= total);
 			final String fid = str(e, "id");
@@ -319,7 +334,9 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 34, py2 + 3, (page + 1) + " / " + pages, UiKit.COL_TEXT_DIM);
 		UiKit.button(ctx, textRenderer, x + 92, py2, 18, 14, ">", mx, my, page + 1 < pages);
 		clickable(x + 92, py2, 18, 14, () -> sendQuery(query, page + 1));
-		UiKit.label(ctx, textRenderer, x + PW - 128, py2 + 3, "доставка в ПВЗ", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + PW - 128, py2 + 3,
+				disc > 0 ? "−" + disc + "% за умную вышку" : "доставка в ПВЗ",
+				disc > 0 ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM);
 	}
 
 	// ------------------------------ Казино-апгрейд ------------------------------
@@ -809,8 +826,8 @@ public class PhoneScreen extends CraftNetScreen {
 	// ------------------------------ Биржа ------------------------------
 
 	private void renderStocks(DrawContext ctx, int x, int y, int mx, int my) {
-		if (i(data, "signal") < 2) {
-			lockOverlay(ctx, x, y, "Нужен 3G+ для биржи");
+		if (!stocksUtc()) {
+			lockOverlay(ctx, x, y, "Нужен 3G (или 2G под умной вышкой ур.4)");
 			return;
 		}
 		var stocks = rows(data, "stocks");
@@ -927,6 +944,17 @@ public class PhoneScreen extends CraftNetScreen {
 		int cym = myp + GpsMapRenderer.SIZE / 2;
 		final int fmxp = mxp, fmyp = myp;
 
+		// кольца покрытия 4G вышек (4G-зона растёт с прокачкой вышки)
+		for (NbtCompound v : rows(data, "villages")) {
+			int rr = i(v, "r4") / zoom;
+			if (rr < 2 || rr > 300) continue;
+			int ddx = (i(v, "x") - pX) / zoom;
+			int ddz = (i(v, "z") - pZ) / zoom;
+			if (Math.abs(ddx) > GpsMapRenderer.SIZE / 2 + rr
+					|| Math.abs(ddz) > GpsMapRenderer.SIZE / 2 + rr) continue;
+			drawRing(ctx, cxm + ddx, cym + ddz, rr, mxp, myp, ringColor(i(v, "off"), i(v, "tlv")));
+		}
+
 		// клик по карте — точка маршрута (метка хранится, пока открыт экран)
 		clickable(mxp, myp, GpsMapRenderer.SIZE, GpsMapRenderer.SIZE, () -> {
 			hasWaypoint = true;
@@ -1000,8 +1028,9 @@ public class PhoneScreen extends CraftNetScreen {
 			if (rowsShown++ >= 5) break;
 			int col = i(v, "off") == 1 ? 0xFFF85149 : 0xFF3FB950;
 			ctx.fill(rx + 7, vy2 + 3, rx + 10, vy2 + 6, col);
+			String vname = trim(str(v, "name"), 12) + (i(v, "tlv") > 0 ? " у" + i(v, "tlv") : "");
 			UiKit.label(ctx, textRenderer, rx + 14, vy2,
-					trim(str(v, "name"), 12), i(v, "off") == 1 ? UiKit.COL_TEXT_DIM : UiKit.COL_TEXT);
+					vname, i(v, "off") == 1 ? UiKit.COL_TEXT_DIM : UiKit.COL_TEXT);
 			String dl = i(v, "d") + "м";
 			ctx.drawText(textRenderer, Text.literal(dl), rx + rw - 6 - textRenderer.getWidth(dl), vy2,
 					UiKit.COL_TEXT_DIM, false);
@@ -1024,6 +1053,29 @@ public class PhoneScreen extends CraftNetScreen {
 		ctx.fill(cx - 1, cy - 3, cx + 1, cy - 2, col);
 		ctx.fill(cx - 2, cy - 2, cx + 2, cy + 2, col);
 		ctx.fill(cx - 1, cy + 2, cx + 1, cy + 3, col);
+	}
+
+	/** Цвет кольца зоны 4G: офлайн — красное, зелёное → золотое по уровню вышки. */
+	private static int ringColor(int off, int tlv) {
+		if (off == 1) return 0x44F85149;
+		return switch (Math.min(4, tlv)) {
+			case 0, 1 -> 0x443FB950;
+			case 2, 3 -> 0x4458A6FF;
+			default -> 0x44FFD75E;
+		};
+	}
+
+	/** Окружность с клиппингом по рамке карты (чтобы не замусоривать колонки). */
+	private static void drawRing(DrawContext ctx, int cx, int cy, int r, int minX, int minY, int col) {
+		double step = Math.max(1.2, 160.0 / r); // чем больше круг, тем чаще точки
+		for (double a = 0; a < 360; a += step) {
+			double rad = Math.toRadians(a);
+			int px3 = cx + (int) Math.round(Math.cos(rad) * r);
+			int py3 = cy + (int) Math.round(Math.sin(rad) * r);
+			if (px3 < minX || px3 > minX + GpsMapRenderer.SIZE - 1) continue;
+			if (py3 < minY || py3 > minY + GpsMapRenderer.SIZE - 1) continue;
+			ctx.fill(px3, py3, px3 + 1, py3 + 1, col);
+		}
 	}
 
 	// ------------------------------ Банк ------------------------------
@@ -1082,6 +1134,156 @@ public class PhoneScreen extends CraftNetScreen {
 		a.putLong("amount", Long.parseLong(amountInput.value.trim()));
 		send("transfer", a);
 		amountInput.value = "";
+	}
+
+	// ------------------------------ Профиль ------------------------------
+
+	/** Статичная клиентская таблица достижений (прогресс и флаги — с сервера). */
+	private record AchRow(String id, String name, Item icon) {}
+
+	private static final AchRow[] ACH_DEFS = {
+			new AchRow("first_job", "Первая смена", Items.IRON_PICKAXE),
+			new AchRow("chief", "Мастер цеха", Items.REDSTONE),
+			new AchRow("logistics", "Логист", Items.CHEST_MINECART),
+			new AchRow("workaholic", "Трудяга", Items.NETHERITE_PICKAXE),
+			new AchRow("shopper", "Шопоголик", Items.EMERALD),
+			new AchRow("merchant", "Торговец", Items.GOLD_INGOT),
+			new AchRow("gambler", "Лудоман", Items.TARGET),
+			new AchRow("lucky", "Счастливчик", Items.DIAMOND),
+			new AchRow("investor", "Инвестор", Items.PAPER),
+			new AchRow("giver", "Меценат", Items.WRITABLE_BOOK),
+			new AchRow("engineer", "Инженер связи", Items.REDSTONE_TORCH),
+			new AchRow("millionaire", "Миллионер", Items.NETHERITE_INGOT),
+	};
+
+	private boolean profileAch;
+
+	private void renderProfile(DrawContext ctx, int x, int y, int mx, int my) {
+		NbtCompound p = sub(data, "profile");
+		NbtCompound c = sub(p, "c");
+
+		// ---- шапка: имя, уровень, звание, полоса опыта ----
+		UiKit.card(ctx, x + 8, y + 2, PW - 16, 32, UiKit.COL_PANEL_HI);
+		String pname = mc() != null && mc().player != null ? mc().player.getName().getString() : "игрок";
+		UiKit.label(ctx, textRenderer, x + 16, y + 8, trim(pname, 18), UiKit.COL_TEXT);
+		String lv = "Ур." + i(p, "lvl") + " «" + str(p, "rank") + "»";
+		ctx.drawText(textRenderer, Text.literal(lv), x + PW - 16 - textRenderer.getWidth(lv), y + 8,
+				UiKit.COL_YELLOW, false);
+		long xp = lng(p, "xp");
+		long base = lng(p, "xpBase");
+		long next = lng(p, "xpNext");
+		int frac = next <= base ? 100 : (int) Math.max(0, Math.min(100, (xp - base) * 100 / Math.max(1, next - base)));
+		UiKit.progress(ctx, x + 16, y + 24, PW - 32, 4, frac, UiKit.COL_ACCENT);
+		String xpTxt = frac >= 100 ? "МАКС" : xp + " / " + next + " XP";
+		ctx.drawText(textRenderer, Text.literal(xpTxt), x + PW - 16 - textRenderer.getWidth(xpTxt), y + 15,
+				UiKit.COL_TEXT_DIM, false);
+
+		// ---- переключатель подвкладок ----
+		UiKit.button(ctx, textRenderer, x + 8, y + 40, 90, 14, "Сводка", mx, my, true);
+		UiKit.button(ctx, textRenderer, x + 102, y + 40, 90, 14, "Достижения", mx, my, true);
+		ctx.fill(profileAch ? x + 104 : x + 10, y + 55, profileAch ? x + 190 : x + 96, y + 57, UiKit.COL_ACCENT);
+		clickable(x + 8, y + 40, 90, 14, () -> profileAch = false);
+		clickable(x + 102, y + 40, 90, 14, () -> profileAch = true);
+
+		if (profileAch) {
+			renderProfileAch(ctx, x, y, p);
+			return;
+		}
+
+		long earnJobs = lng(c, "earnJobs");
+		long earnSales = lng(c, "earnSales");
+		long earnStocks = lng(c, "stocksEarn");
+		long earnCasino = lng(c, "casinoWon");
+		long earnedTotal = earnJobs + earnSales + earnStocks + earnCasino;
+
+		// ---- левая колонка: работа и связь ----
+		int ly2 = y + 68;
+		UiKit.label(ctx, textRenderer, x + 10, ly2, "РАБОТА", UiKit.COL_ACCENT);
+		ly2 += 12;
+		UiKit.label(ctx, textRenderer, x + 10, ly2, "Смен выполнено: " + lng(c, "jobsDone"), UiKit.COL_TEXT);
+		ly2 += 11;
+		UiKit.label(ctx, textRenderer, x + 10, ly2,
+				"завод " + lng(c, "jobsFactory") + " · грузч " + lng(c, "jobsLoader"), UiKit.COL_TEXT_DIM);
+		ly2 += 11;
+		UiKit.label(ctx, textRenderer, x + 10, ly2,
+				"повар " + lng(c, "jobsCook") + " · курьер " + lng(c, "jobsCourier"), UiKit.COL_TEXT_DIM);
+		ly2 += 11;
+		UiKit.label(ctx, textRenderer, x + 10, ly2, "Зарплата: +" + earnJobs + " CR", UiKit.COL_GREEN);
+		ly2 += 11;
+		UiKit.label(ctx, textRenderer, x + 10, ly2,
+				"Срывы: " + lng(c, "jobsCanceled") + " (−" + lng(c, "finesPaid") + ")", UiKit.COL_TEXT_DIM);
+		ly2 += 14;
+		UiKit.label(ctx, textRenderer, x + 10, ly2, "СВЯЗЬ", UiKit.COL_ACCENT);
+		ly2 += 12;
+		UiKit.label(ctx, textRenderer, x + 10, ly2,
+				"Вышек прокачано: " + lng(c, "towerUpgrades"), UiKit.COL_TEXT);
+		ly2 += 11;
+		UiKit.label(ctx, textRenderer, x + 10, ly2,
+				"Вложено: " + lng(c, "towerInvested") + " CR", UiKit.COL_TEXT_DIM);
+
+		// ---- правая колонка: экономика ----
+		int rx2 = x + 156;
+		int ry2 = y + 68;
+		UiKit.label(ctx, textRenderer, rx2, ry2, "ЭКОНОМИКА", UiKit.COL_ACCENT);
+		ry2 += 12;
+		UiKit.label(ctx, textRenderer, rx2, ry2, "Заработано: " + earnedTotal + " CR", UiKit.COL_YELLOW);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"заказы " + lng(c, "ordersBought") + " · посылки " + lng(c, "parcelsClaimed"),
+				UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"продажи +" + earnSales + " (" + lng(c, "itemsSold") + " шт)", UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"биржа +" + earnStocks + " · див " + lng(c, "dividendsGot"), UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"казино: " + lng(c, "spins") + " спинов · " + lng(c, "spinWins") + " побед",
+				UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"ставки " + lng(c, "casinoWagered") + " · призы +" + earnCasino, UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"барахолка: " + lng(c, "marketListed") + " лот · " + lng(c, "marketBought") + " купл.",
+				UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"переводы → " + lng(c, "transfersSent") + " CR", UiKit.COL_TEXT_DIM);
+
+		// ---- подвал: счётчик достижений ----
+		int un = 0;
+		for (NbtCompound r : rows(p, "ach")) un += i(r, "un");
+		UiKit.label(ctx, textRenderer, x + 10, y + 185,
+				"Достижений открыто: " + un + " / " + ACH_DEFS.length, UiKit.COL_TEXT_DIM);
+	}
+
+	/** Сетка 3×4 плиток достижений с прогрессом. */
+	private void renderProfileAch(DrawContext ctx, int x, int y, NbtCompound p) {
+		java.util.Map<String, NbtCompound> byId = new java.util.HashMap<>();
+		for (NbtCompound r : rows(p, "ach")) byId.put(str(r, "id"), r);
+		for (int k = 0; k < ACH_DEFS.length; k++) {
+			AchRow def = ACH_DEFS[k];
+			NbtCompound r = byId.get(def.id());
+			long cur = r == null ? 0 : lng(r, "cur");
+			long need = r == null ? 1 : Math.max(1, lng(r, "need"));
+			boolean un = r != null && i(r, "un") == 1;
+			int tx = x + 8 + (k % 3) * 96;
+			int ty = y + 64 + (k / 3) * 32;
+			UiKit.card(ctx, tx, ty, 94, 30, un ? 0xFF1E3020 : UiKit.COL_PANEL);
+			ctx.drawItem(def.icon().getDefaultStack(), tx + 4, ty + 4);
+			UiKit.label(ctx, textRenderer, tx + 24, ty + 3, trim(def.name(), 11),
+					un ? UiKit.COL_TEXT : UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, tx + 24, ty + 13,
+					un ? "✓ получено" : cur + " / " + need,
+					un ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM);
+			UiKit.progress(ctx, tx + 4, ty + 24, 86, 3,
+					un ? 100 : (int) Math.min(100, cur * 100 / need),
+					un ? UiKit.COL_GREEN : UiKit.COL_ACCENT);
+		}
+		UiKit.label(ctx, textRenderer, x + 10, y + 66 + 4 * 32,
+				"каждое достижение даёт опыт профиля", UiKit.COL_TEXT_DIM);
 	}
 
 	// ----------------------------------------------------------------

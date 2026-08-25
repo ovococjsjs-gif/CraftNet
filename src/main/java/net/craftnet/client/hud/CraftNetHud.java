@@ -23,6 +23,7 @@ public final class CraftNetHud {
 	private CraftNetHud() {}
 
 	private static volatile int tier = 0;
+	private static volatile int towerLevel = 0;
 	private static volatile String village = "";
 	private static volatile int dist = -1;
 	private static volatile boolean offline = false;
@@ -37,6 +38,7 @@ public final class CraftNetHud {
 
 	public static void update(NbtCompound d) {
 		tier = d.getInt("sig", 0);
+		towerLevel = d.getInt("tlv", 0);
 		village = d.getString("village", "");
 		dist = d.getInt("dist", -1);
 		offline = d.getInt("off", 0) == 1;
@@ -82,6 +84,12 @@ public final class CraftNetHud {
 
 		ctx.drawText(mc.textRenderer, Text.literal(lvl.label), x + 6 + 3 * 6 + 2, y + ph - 16,
 				bars > 0 ? argb(lvl.colorRgb) : UiKit.COL_TEXT_DIM, false);
+		if (bars > 0 && towerLevel > 0) {
+			String tlv = "у" + towerLevel;
+			ctx.drawText(mc.textRenderer, Text.literal(tlv),
+					x + 6 + 3 * 6 + 4 + mc.textRenderer.getWidth(lvl.label), y + ph - 16,
+					UiKit.COL_YELLOW, false);
+		}
 
 		String line1 = offline || village.isEmpty() ? "нет сети" : trim(village, 14);
 		ctx.drawText(mc.textRenderer, Text.literal(line1), x + 6, y + 5,

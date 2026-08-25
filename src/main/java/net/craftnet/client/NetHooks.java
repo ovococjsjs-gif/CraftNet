@@ -10,6 +10,7 @@ import net.craftnet.client.gui.CraftNetScreen;
 import net.craftnet.client.gui.JobScreen;
 import net.craftnet.client.gui.PhoneScreen;
 import net.craftnet.client.gui.PvzScreen;
+import net.craftnet.client.gui.TowerScreen;
 import net.craftnet.network.ModPackets;
 
 /** Клиентские приёмники пакетов и фабрика экранов. */
