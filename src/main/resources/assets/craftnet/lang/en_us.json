@@ -77,6 +77,7 @@
   "craftnet.tutorial.6": "§fStocks: §7shares of 5 companies rise and fall; daily dividends — watch the news feed.",
   "craftnet.tutorial.7": "§fJobs: §7factory (mini-game or craft order), loader, cook (craft orders) and courier; failing a shift means a fine.",
   "craftnet.tutorial.8": "§fPickup point/bank/factory/cafe: §7spawn in new villages; a cell tower is built nearby.",
+  "craftnet.tutorial.9": "§fTowers: §7right-click the core to upgrade levels 1-4 (range, faster delivery, stocks over 2G, 5% shop discount). §fProfile: §7the head tab — your stats and 12 achievements.",
   "craftnet.welcome_phone": "You've been issued a CraftNet smartphone (+100 CR). Press P for the phone, /craftnet tutorial for a guide.",
   "item.craftnet.banknote": "Banknote",
   "item.craftnet.banknote.tip": "Value: %s CR. Redeem at a bank terminal.",

@@ -43,7 +43,7 @@ public final class AdminCommands {
 				// /craftnet tutorial — краткий гайд по моду, доступен всем
 				.then(CommandManager.literal("tutorial").executes(ctx -> {
 					ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
-					for (int i = 1; i <= 8; i++) {
+					for (int i = 1; i <= 9; i++) {
 						final String key = "craftnet.tutorial." + i;
 						p.sendMessage(Text.translatable(key).formatted(net.minecraft.util.Formatting.GRAY), false);
 					}
