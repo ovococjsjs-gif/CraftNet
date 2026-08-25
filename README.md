@@ -23,7 +23,7 @@ gradle build
 # Либо просто откройте проект в IntelliJ IDEA — она подтянет всё сама.
 ```
 
-Готовый мод появится в `build/libs/craftnet-1.0.0.jar`.
+Готовый мод появится в `build/libs/craftnet-1.1.0.jar`.
 
 ## Сборка в GitHub Actions (CI)
 
@@ -48,13 +48,13 @@ gradle runClient
 
 GitHub Actions собирает мод на каждый push: вкладка **Actions** →
 зелёный прогон → внизу **Artifacts → craftnet-jar** → скачанный zip
-содержит `craftnet-1.0.0.jar`.
+содержит `craftnet-1.1.0.jar`.
 
 ## Установка в игру
 
 1. Fabric Loader **0.19.3+** для Minecraft **1.21.11**.
 2. **Fabric API 0.141.6+1.21.11** (или новее) в папку `mods`.
-3. `craftnet-1.0.0.jar` туда же.
+3. `craftnet-1.1.0.jar` туда же.
 
 ---
 

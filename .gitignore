@@ -35,3 +35,7 @@ replay_pid*.log
 # gradle wrapper jar is intentionally not committed (sandbox has no network);
 # regenerate with `gradle wrapper` or let your IDE download the distribution.
 gradle/wrapper/gradle-wrapper.jar
+
+# python
+__pycache__/
+*.pyc
