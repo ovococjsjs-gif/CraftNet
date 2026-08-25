@@ -43,11 +43,14 @@ public final class StocksManager {
 
 	public enum Company {
 		//                    id      ruName            lo    hi    vol     revert  divYield
-		REDR("REDR", "РедстоунКорп",  90, 170, 0.006, 0.06, 0.008),
-		CRPR("CRPR", "КриперЭнерджи", 35, 150, 0.014, 0.04, 0.012),
-		VLBK("VLBK", "ЖительБанк",   140, 230, 0.0035, 0.08, 0.016),
-		ENDT("ENDT", "ЭндерТех",     180, 400, 0.009, 0.05, 0.004),
-		NFSH("NFSH", "НезерСталь",   240, 520, 0.011, 0.05, 0.006);
+		// divYield — доля цены пакета за ИГРОВЫЕ сутки (20 мин реальных):
+		// ~0.001 ≈ 0.3% в час пассива. Ориентир баланса: хуже завода ×3–5,
+		// лучше нуля — биржа добавка к работе, а не замена. См. ECONOMY.md.
+		REDR("REDR", "РедстоунКорп",  90, 170, 0.006, 0.06, 0.0025),
+		CRPR("CRPR", "КриперЭнерджи", 35, 150, 0.014, 0.04, 0.003),
+		VLBK("VLBK", "ЖительБанк",   140, 230, 0.0035, 0.08, 0.004),
+		ENDT("ENDT", "ЭндерТех",     180, 400, 0.009, 0.05, 0.001),
+		NFSH("NFSH", "НезерСталь",   240, 520, 0.011, 0.05, 0.002);
 
 		public final String id;
 		public final String ruName;
@@ -284,7 +287,8 @@ public final class StocksManager {
 				int n = rec.getInt(c.id, 0);
 				if (n <= 0) continue; // нет акций — нет дивидендов, точка
 				double price = price(comps(st.data()).getCompound(c.id).orElseGet(NbtCompound::new));
-				long pay = Math.min(10_000, Math.round(price * n * c.divYield));
+				long cap = net.craftnet.config.CraftNetConfig.get().stocksDividendCapPerCompany;
+				long pay = Math.min(cap, Math.round(price * n * c.divYield));
 			if (pay <= 0) continue;
 			MoneyManager.add(server, uuid, pay, "дивиденды " + c.id);
 			StatsManager.bump(server, uuid, StatsManager.DIVIDENDS, pay);
@@ -336,18 +340,38 @@ public final class StocksManager {
 		st.markDirty();
 	}
 
-	/** Покупка со спредом. @return true при успехе. */
-	public static boolean buy(MinecraftServer server, UUID player, String id, int n) {
+	public static final int BUY_OK = 0;
+	public static final int BUY_FAIL = 1;      // нет такой компании / нет денег / n вне рамок
+	public static final int BUY_LIMIT = 2;     // лимит рыночной стоимости портфеля
+
+	/**
+	 * Покупка со спредом. Анти «пассивный ультрадоход»: после сделки рыночная
+	 * стоимость всего портфеля не должна превышать stocksMaxExposure (конфиг).
+	 * @return {@link #BUY_OK}/{@link #BUY_FAIL}/{@link #BUY_LIMIT}.
+	 */
+	public static int buy(MinecraftServer server, UUID player, String id, int n) {
 		Company c = Company.byId(id);
-		if (c == null || n <= 0 || n > 1000) return false;
+		if (c == null || n <= 0 || n > 1000) return BUY_FAIL;
 		double price = price(server, c.id);
-		if (price <= 0) return false;
+		if (price <= 0) return BUY_FAIL;
 		long cost = Math.max(1, Math.round(price * n * (1 + SPREAD)));
-		if (!MoneyManager.tryCharge(server, player, cost, "акции " + c.id)) return false;
+		long cap = net.craftnet.config.CraftNetConfig.get().stocksMaxExposure;
+		if (portfolioValue(server, player) + cost > cap) return BUY_LIMIT;
+		if (!MoneyManager.tryCharge(server, player, cost, "акции " + c.id)) return BUY_FAIL;
 		setOwned(server, player, c.id, owned(server, player, c.id) + n);
 		StatsManager.bump(server, player, StatsManager.STOCKS_BOUGHT, n);
 		StatsManager.addXp(server, player, 2);
-		return true;
+		return BUY_OK;
+	}
+
+	/** Рыночная стоимость всех акций игрока по текущим ценам, CR. */
+	public static long portfolioValue(MinecraftServer server, UUID player) {
+		long v = 0;
+		for (Company c : Company.values()) {
+			int n = owned(server, player, c.id);
+			if (n > 0) v += Math.round(price(server, c.id) * n);
+		}
+		return v;
 	}
 
 	/** Продажа со спредом. @return выручка, или -1 при ошибке. */

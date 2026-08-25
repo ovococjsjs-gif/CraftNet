@@ -62,12 +62,20 @@ public final class CraftNetConfig {
 	public double sellRatioExpensive = 0.80;
 
 	// ---- казино-апгрейдер ----
+	/** Возврат игроку, % (RTP). Шанс спина = stake/цель × rtp/100: 90 = казино в среднем удерживает 10% оборота. */
+	public double casinoRtpPct = 90.0;
 	/** Максимум предметов одного вида в ставке. */
 	public int casinoMaxStakeUnits = 64;
 	/** Минимальный шанс спина, в базисных пунктах (100 = 1%). */
 	public int casinoMinChanceBp = 100;
 	/** Максимальный шанс спина, в базисных пунктах (9500 = 95%). */
 	public int casinoMaxChanceBp = 9500;
+
+	// ---- биржа ----
+	/** Лимит рыночной стоимости портфеля акций на игрока, CR (анти «пассивный ультрадоход»). */
+	public long stocksMaxExposure = 50_000;
+	/** Потолок дивидендов с одной компании за игровые сутки, CR. */
+	public long stocksDividendCapPerCompany = 2_500;
 
 	// ---- вышки / магазин ----
 	/** Скидка «умной вышки» ур.4 в магазине, %. */
@@ -131,9 +139,14 @@ public final class CraftNetConfig {
 		if (bankInterestCap < 0) bankInterestCap = 0;
 		if (bankInterestMinBalance < 0) bankInterestMinBalance = 0;
 		if (casinoMaxStakeUnits < 1) casinoMaxStakeUnits = 1;
+		if (casinoRtpPct < 50) casinoRtpPct = 50;
+		if (casinoRtpPct > 100) casinoRtpPct = 100;
 		if (casinoMinChanceBp < 1) casinoMinChanceBp = 1;
 		if (casinoMaxChanceBp > 9900) casinoMaxChanceBp = 9900;
 		if (casinoMaxChanceBp < casinoMinChanceBp) casinoMaxChanceBp = 9500;
+		if (stocksMaxExposure < 1_000) stocksMaxExposure = 1_000;
+		if (stocksMaxExposure > 10_000_000) stocksMaxExposure = 10_000_000;
+		if (stocksDividendCapPerCompany < 0) stocksDividendCapPerCompany = 0;
 		if (shopSmartTowerDiscountPct < 0) shopSmartTowerDiscountPct = 0;
 		if (shopSmartTowerDiscountPct > 50) shopSmartTowerDiscountPct = 50;
 		if (sellRatioCheap < 0.05 || sellRatioCheap > 0.95) sellRatioCheap = 0.55;

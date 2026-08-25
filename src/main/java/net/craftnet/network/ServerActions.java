@@ -348,7 +348,11 @@ public final class ServerActions {
 			return;
 		}
 		if (buy) {
-			if (!StocksManager.buy(server, player.getUuid(), id, n)) {
+			int rc = StocksManager.buy(server, player.getUuid(), id, n);
+			if (rc == StocksManager.BUY_LIMIT) {
+				player.sendMessage(Text.translatable("craftnet.stocks.limit",
+						net.craftnet.config.CraftNetConfig.get().stocksMaxExposure), false);
+			} else if (rc != StocksManager.BUY_OK) {
 				player.sendMessage(Text.translatable("craftnet.stocks.fail_buy"), false);
 			}
 		} else {
@@ -671,6 +675,7 @@ public final class ServerActions {
 		for (NbtCompound row : StocksManager.clientRows(server, player.getUuid())) stocks.add(row);
 		d.put("stocks", stocks);
 		d.put("stNews", StocksManager.clientNews(server, 3));
+		d.putLong("stMaxExp", net.craftnet.config.CraftNetConfig.get().stocksMaxExposure);
 
 		StringBuilder tx = new StringBuilder();
 		for (String s : MoneyManager.txLog(server, player.getUuid())) {
@@ -789,6 +794,11 @@ public final class ServerActions {
 		for (NbtCompound row : CasinoManager.poolRows(server, player.getUuid())) staked.add(row);
 		cz.put("staked", staked);
 		cz.putLong("stakeVal", CasinoManager.poolValue(server, player.getUuid()));
+		// параметры шанса — клиент считает «живой» шанс той же формулой, что и спин
+		cz.putInt("bpMin", CasinoManager.BP_MIN);
+		cz.putInt("bpMax", CasinoManager.BP_MAX);
+		cz.putLong("rtpPromille", Math.round(
+				net.craftnet.config.CraftNetConfig.get().casinoRtpPct * 10));
 		// источник ставок: агрегированный инвентарь (только то, что можно оценить), до 12 видов
 		Map<String, int[]> agg = new java.util.LinkedHashMap<>();
 		Map<String, String> names = new java.util.HashMap<>();

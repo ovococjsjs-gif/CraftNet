@@ -66,6 +66,7 @@
   "craftnet.stocks.dividend": "Дивиденды по акциям: +%s CR",
   "craftnet.stocks.fail_buy": "Не удалось купить акции (хватает средств? правильный тикер?).",
   "craftnet.stocks.fail_sell": "Не удалось продать акции (нет столько?).",
+  "craftnet.stocks.limit": "Лимит портфеля акций: не больше %s CR. Продай часть — или поднимай cap в конфиге.",
   "craftnet.stocks.need_3g": "Для торговли нужен 3G или лучше.",
   "craftnet.stocks.sold": "Продано %s %s за %s CR.",
   "craftnet.too_far": "Подойдите ближе к стойке обслуживания.",

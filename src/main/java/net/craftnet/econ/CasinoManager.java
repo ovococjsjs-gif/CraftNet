@@ -26,10 +26,14 @@ import net.craftnet.util.Nbt2;
 /**
  * Казино-апгрейдер (в телефоне, «интернет-казино»):
  *  - игрок кладёт предметы в ставку (пул в PersistentState, из инвентаря списываются);
- *  - цель — любой торгуемый предмет; честный шанс = стоимость ставки (по цене продажи
- *    ПВЗ) / стоимость цели (по цене покупки в магазине);
- *    пример: ставка вдвое дешевле приза → ровно 50%;
+ *  - цель — любой торгуемый предмет; шанс = стоимость ставки (по цене ПРОДАЖИ ПВЗ)
+ *    / цена покупки цели × RTP (конфиг casinoRtpPct, дефолт 90%): казино в среднем
+ *    удерживает ~10% оборота — мягкий, но честный сток экономики;
  *  - шанс ограничен 1%..95% (нельзя заложить «бесплатный апгрейд»);
+ *    математика: ожидаемая цена приза = стоимость ставки × RTP, т.е. на дистанции
+ *    приз обходится на ~11% дороже покупки в магазине — плата за азарт и слияние
+ *    хлама в эндгейм-предметы; продажа выигрыша всегда менее выгодна, чем исходная
+ *    продажа ставки (двойной спред), денежной петли нет;
  *  - спин серверный и мгновенный, рулетка на клиенте — чистый театр по seed спина;
  *    проигрыш сжигает ставку, выигрыш выдаёт приз в инвентарь;
  *  - крупные выигрыши (шанс ≤ 20%) рассылаются в общий чат.
@@ -72,6 +76,17 @@ public final class CasinoManager {
 			v += (long) PriceManager.sellPrice(Nbt2.str(e, "id")) * Nbt2.i(e, "count");
 		}
 		return v;
+	}
+
+	/**
+	 * Шанс спина в базисных пунктах: stake/цель × RTP, без clamp — границы
+	 * (BP_MIN/BP_MAX) применяет вызывающий (спин) или sync/клиент. Единая
+	 * формула: серверный спин, casino-sync и телефон считают одинаково.
+	 */
+	public static long chanceBp(long stakeSellValue, long targetBuyPrice) {
+		if (stakeSellValue <= 0 || targetBuyPrice <= 0) return 0;
+		long rtpPromille = Math.round(net.craftnet.config.CraftNetConfig.get().casinoRtpPct * 10);
+		return stakeSellValue * 10000L * rtpPromille / 1000L / targetBuyPrice;
 	}
 
 	private static List<NbtCompound> poolList(CasinoState st, UUID uuid) {
@@ -170,7 +185,7 @@ public final class CasinoManager {
 		long stake = poolValue(server, player.getUuid());
 		long targetVal = PriceManager.buyPrice(targetId);
 		if (stake <= 0) return SPIN_EMPTY;
-		long bp = Math.min(BP_MAX, stake * 10000L / targetVal);
+		long bp = Math.min(BP_MAX, chanceBp(stake, targetVal));
 		if (bp < BP_MIN) return SPIN_LOW;
 
 		// ставка сгорает всегда

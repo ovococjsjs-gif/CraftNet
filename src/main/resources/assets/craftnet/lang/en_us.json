@@ -66,6 +66,7 @@
   "craftnet.stocks.dividend": "Stock dividends: +%s CR",
   "craftnet.stocks.fail_buy": "Could not buy shares (not enough funds?).",
   "craftnet.stocks.fail_sell": "Could not sell shares (not enough shares?).",
+  "craftnet.stocks.limit": "Stock portfolio limit: %s CR max. Sell some first — or raise the cap in the config.",
   "craftnet.stocks.need_3g": "Trading requires 3G or better.",
   "craftnet.stocks.sold": "Sold %s %s for %s CR.",
   "craftnet.too_far": "Move closer to the service station.",

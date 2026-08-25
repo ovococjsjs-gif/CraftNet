@@ -428,9 +428,12 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 
 		boolean animating = animStartTick >= 0 && now - animStartTick < ANIM_DUR;
-		// текущий «живой» шанс от ставки; после спина (ставка сгорела) держим дугу прошлого спина
+		// текущий «живой» шанс от ставки (та же формула, что у серверного спина:
+		// stake/цель × RTP); после спина (ставка сгорела) держим дугу прошлого
+		long rtpPrm = lng(cz, "rtpPromille") > 0 ? lng(cz, "rtpPromille") : 1000;
 		long liveBp = stakeVal > 0 && casinoTargetPrice > 0
-				? Math.min(9500, stakeVal * 10000 / casinoTargetPrice) : 0;
+				? Math.min(i(cz, "bpMax") > 0 ? i(cz, "bpMax") : 9500,
+						stakeVal * 10000 * rtpPrm / 1000 / casinoTargetPrice) : 0;
 		int arcBp;
 		if (animating || (seenSpinId == lastId && lastId > 0 && stakeVal <= 0)) {
 			arcBp = animBp;
@@ -530,12 +533,13 @@ public class PhoneScreen extends CraftNetScreen {
 
 		// ================= кнопка спина + чипы =================
 		long bp = liveBp;
-		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= 100;
+		int bpMin = i(cz, "bpMin") > 0 ? i(cz, "bpMin") : 100;
+		boolean canSpin = !staked.isEmpty() && casinoTarget != null && bp >= bpMin;
 		int btnY = y + 66;
 		String spinText = animating ? "КРУТИМ…"
 				: staked.isEmpty() ? "← шаг 1: ставка"
 				: casinoTarget == null ? "← шаг 2: цель"
-				: bp < 100 ? "ставки < 1% шанса"
+				: bp < bpMin ? String.format("ставки < %.1f%% шанса", bpMin / 100.0)
 				: "3. КРУТИТЬ!";
 		UiKit.button(ctx, textRenderer, x + 8, btnY, 130, 18, spinText, mx, my, canSpin && !animating);
 		// пульс рамки — зовёт нажать, когда всё готово
@@ -552,16 +556,16 @@ public class PhoneScreen extends CraftNetScreen {
 				send("casino_spin", a);
 			});
 		}
-		// чипы автодобора: x2 x4 x8 — «цена цели / N», % — доля от цены цели
-		String[] chipLab = {"x2", "x4", "x8", "30%", "50%", "70%"};
-		double[] chipFac = {0.5, 0.25, 0.125, 0.30, 0.50, 0.70};
+		// чипы автодобора: желаемый ШАНС спина (ставка добирается с поправкой на RTP)
+		String[] chipLab = {"10%", "25%", "50%", "75%", "90%"};
+		double[] chipP = {0.10, 0.25, 0.50, 0.75, 0.90};
 		for (int c = 0; c < chipLab.length; c++) {
-			int bx = x + 144 + c * 25;
-			double f = chipFac[c];
-			UiKit.button(ctx, textRenderer, bx, btnY, 22, 18, chipLab[c], mx, my,
+			int bx = x + 144 + c * 27;
+			double p = chipP[c];
+			UiKit.button(ctx, textRenderer, bx, btnY, 24, 18, chipLab[c], mx, my,
 					casinoTarget != null && casinoTargetPrice > 0);
 			if (casinoTarget != null && casinoTargetPrice > 0) {
-				clickable(bx, btnY, 22, 18, () -> autoStake(f));
+				clickable(bx, btnY, 24, 18, () -> autoStake(p));
 			}
 		}
 
@@ -605,12 +609,18 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 	}
 
-	/** Автодобор ставки до доли f от цены цели (x2 = половина цены и т.п.). */
-	private void autoStake(double factor) {
+	/**
+	 * Автодобор ставки до желаемого шанса probChance (сервер перепроверит):
+	 * нужная ставка = цена цели × шанс / RTP — чип «75%» добирает ровно
+	 * столько ценности (по цене продажи), сколько даст 75% спина.
+	 */
+	private void autoStake(double probChance) {
 		NbtCompound cz = sub(data, "casino");
 		long stakeVal = lng(cz, "stakeVal");
 		if (casinoTargetPrice <= 0) return;
-		long desired = (long) Math.ceil(casinoTargetPrice * factor);
+		long rtpPrm = lng(cz, "rtpPromille") > 0 ? lng(cz, "rtpPromille") : 1000;
+		double k = rtpPrm / 1000.0;
+		long desired = (long) Math.ceil(casinoTargetPrice * probChance / k);
 		long extra = desired - stakeVal;
 		if (extra <= 0) {
 			casinoHint = "ставки уже хватает на этот порог";
@@ -974,7 +984,10 @@ public class PhoneScreen extends CraftNetScreen {
 			portCnt += i(s0, "owned");
 			portVal += Math.round(i(s0, "owned") * dbl(s0, "price"));
 		}
-		String port = portCnt > 0 ? "Портфель: " + portVal + " CR (" + portCnt + " шт.)" : "портфель пуст";
+		long maxExp = lng(data, "stMaxExp");
+		String port = portCnt > 0
+				? "Портфель: " + portVal + (maxExp > 0 ? "/" + maxExp : "") + " CR (" + portCnt + " шт.)"
+				: "портфель пуст" + (maxExp > 0 ? " · лимит " + maxExp + " CR" : "");
 		UiKit.label(ctx, textRenderer, x + 8, y + 3, port, portCnt > 0 ? UiKit.COL_YELLOW : UiKit.COL_TEXT_DIM);
 		String hint = "пульс цен ~5 с";
 		ctx.drawText(textRenderer, Text.literal(hint), x + PW - 8 - textRenderer.getWidth(hint), y + 3,
