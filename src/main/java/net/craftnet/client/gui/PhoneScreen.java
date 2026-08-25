@@ -570,8 +570,9 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 
 		// ================= инвентарь (источник ставок) =================
+		// прозрачность правил: показываем возврат игроку (RTP) из конфига
 		UiKit.label(ctx, textRenderer, x + 8, y + 92,
-				"инвентарь: клик → в ставку · Shift → ×8", UiKit.COL_TEXT_DIM);
+				"инвентарь: клик → в ставку · Shift → ×8 · RTP " + (rtpPrm / 10) + "%", UiKit.COL_TEXT_DIM);
 		var src = rows(cz, "src");
 		if (src.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 8, y + 106,
