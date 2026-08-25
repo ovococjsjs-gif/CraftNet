@@ -58,7 +58,7 @@ public final class MoneyManager {
 		long bal = Nbt2.lng(rec, "bal") + amount;
 		if (bal < 0) bal = 0;
 		rec.putLong("bal", bal);
-		appendTx(rec, (amount >= 0 ? "+" : "") + amount + " " + reason);
+		appendTx(rec, server, amount, reason);
 		saveRec(st, id, rec);
 		return bal;
 	}
@@ -70,20 +70,35 @@ public final class MoneyManager {
 		return true;
 	}
 
-	private static void appendTx(NbtCompound rec, String entry) {
+	/** Журнал — структурный: {a: дельта CR, r: причина, at: игровое время}. */
+	private static void appendTx(NbtCompound rec, MinecraftServer server, long amount, String reason) {
 		NbtList log = rec.getListOrEmpty("tx");
 		log = (NbtList) log.copy(); // защита от мутаций копий
-		log.add(NbtString.of(entry));
+		NbtCompound e = new NbtCompound();
+		e.putLong("a", amount);
+		e.putString("r", reason);
+		e.putLong("at", server.getOverworld().getTime());
+		log.add(e);
 		while (log.size() > TX_LOG_MAX) log.remove(0);
 		rec.put("tx", log);
 	}
 
-	public static List<String> txLog(MinecraftServer server, UUID id) {
+	/**
+	 * Журнал операций (моложе — в конце). Записи нового формата — compounds
+	 * {a, r, at}; легаси-строки из старых сейвов нормализуются в {r} без суммы.
+	 */
+	public static List<NbtCompound> txLog(MinecraftServer server, UUID id) {
 		NbtList log = Nbt2.sub(players(state(server).data()), id.toString()).getListOrEmpty("tx");
-		List<String> out = new ArrayList<>(log.size());
-		for (int i = 0; i < log.size(); i++) {
-			final int idx = i;
-			out.add(log.get(idx).asString().orElse(""));
+		List<NbtCompound> out = new ArrayList<>(log.size());
+		for (var el : log) {
+			if (el instanceof NbtCompound c) {
+				out.add(c);
+			} else if (el instanceof NbtString s) {
+				// старый текстовый формат "+240 работа: завод" — сумму не парсим
+				NbtCompound legacy = new NbtCompound();
+				legacy.putString("r", s.asString().orElse(""));
+				out.add(legacy);
+			}
 		}
 		return out;
 	}

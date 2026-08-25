@@ -1273,25 +1273,47 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 44, y + 68, "кроме вас сейчас никого", UiKit.COL_TEXT_DIM);
 		}
 
-		// история
+		// история (структурный журнал: сумма цветом, причина, «сколько назад»)
 		UiKit.card(ctx, x + 8, y + 114, PW - 16, 74, UiKit.COL_PANEL);
 		UiKit.label(ctx, textRenderer, x + 16, y + 121, "История операций", UiKit.COL_ACCENT);
-		String[] lines = str(data, "tx").isEmpty() ? new String[0] : str(data, "tx").split("\n");
-		if (lines.length == 0) {
+		var txs = rows(data, "tx");
+		if (txs.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 16, y + 136, "пока пусто", UiKit.COL_TEXT_DIM);
 		}
+		long nowTx = mc() != null && mc().world != null ? mc().world.getTime() : 0;
 		int ly = y + 133;
 		int rowIdx = 0;
-		for (int k = Math.max(0, lines.length - 5); k < lines.length; k++) {
-			String l = lines[k];
+		for (int k = Math.max(0, txs.size() - 5); k < txs.size(); k++) {
+			NbtCompound e = txs.get(k);
 			if (rowIdx % 2 == 0) {
 				ctx.fill(x + 12, ly - 1, x + PW - 12, ly + 9, 0x14FFFFFF);
 			}
-			int col = l.startsWith("+") ? UiKit.COL_GREEN : UiKit.COL_TEXT;
-			UiKit.label(ctx, textRenderer, x + 16, ly, trim(l, 48), col);
+			int rx = x + 16;
+			if (e.contains("a")) {
+				long a = lng(e, "a");
+				String sum = (a >= 0 ? "+" : "−") + Math.abs(a);
+				UiKit.label(ctx, textRenderer, rx, ly, sum, a >= 0 ? UiKit.COL_GREEN : UiKit.COL_RED);
+				rx += Math.max(34, textRenderer.getWidth(sum) + 6);
+			}
+			UiKit.label(ctx, textRenderer, rx, ly,
+					UiKit.fit(textRenderer, str(e, "r"), PW - 96 - (rx - x - 16)), UiKit.COL_TEXT_DIM);
+			long at = lng(e, "at");
+			if (at > 0 && nowTx >= at) {
+				String ago = ago((nowTx - at) / 20);
+				ctx.drawText(textRenderer, Text.literal(ago),
+						x + PW - 16 - textRenderer.getWidth(ago), ly, UiKit.COL_TEXT_DIM, false);
+			}
 			ly += 11;
 			rowIdx++;
 		}
+	}
+
+	/** Компактное «сколько назад»: 45с / 12м / 3ч / 2д. */
+	private static String ago(long sec) {
+		if (sec < 60) return sec + "с";
+		if (sec < 3600) return (sec / 60) + "м";
+		if (sec < 86400) return (sec / 3600) + "ч";
+		return (sec / 86400) + "д";
 	}
 
 	private boolean canTransfer() {

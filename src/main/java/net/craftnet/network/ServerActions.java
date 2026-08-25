@@ -681,12 +681,10 @@ public final class ServerActions {
 		d.put("stNews", StocksManager.clientNews(server, 3));
 		d.putLong("stMaxExp", net.craftnet.config.CraftNetConfig.get().stocksMaxExposure);
 
-		StringBuilder tx = new StringBuilder();
-		for (String s : MoneyManager.txLog(server, player.getUuid())) {
-			if (tx.length() > 0) tx.append('\n');
-			tx.append(s);
-		}
-		d.putString("tx", tx.toString());
+		// журнал операций (структурный {a,r,at} — клиент красит сумму и время)
+		NbtList tx = new NbtList();
+		for (NbtCompound e : MoneyManager.txLog(server, player.getUuid())) tx.add(e);
+		d.put("tx", tx);
 
 		// UX: имена онлайн-игроков для подсказок получателя перевода (себя не шлём)
 		StringBuilder on = new StringBuilder();
