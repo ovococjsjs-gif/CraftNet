@@ -38,9 +38,9 @@ public final class CasinoManager {
 	private CasinoManager() {}
 
 	public static final int MAX_KINDS = 4;
-	public static final int MAX_UNITS = 64;
-	public static final int BP_MIN = 100;   // 1.00%
-	public static final int BP_MAX = 9500;  // 95.00%
+	public static final int MAX_UNITS = net.craftnet.config.CraftNetConfig.get().casinoMaxStakeUnits;
+	public static final int BP_MIN = net.craftnet.config.CraftNetConfig.get().casinoMinChanceBp;  // 1.00% (конфиг)
+	public static final int BP_MAX = net.craftnet.config.CraftNetConfig.get().casinoMaxChanceBp;  // 95.00% (конфиг)
 	public static final int BIG_WIN_BP = 2000; // ≤20% — «крупный» выигрыш в общий чат
 
 	public static final int SPIN_OK = 0;

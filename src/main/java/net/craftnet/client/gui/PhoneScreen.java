@@ -595,6 +595,7 @@ public class PhoneScreen extends CraftNetScreen {
 		java.util.Map<String, Integer> poolCnt = new java.util.HashMap<>();
 		for (NbtCompound e : staked) poolCnt.put(str(e, "id"), i(e, "count"));
 		long addedVal = 0;
+		net.minecraft.nbt.NbtList batch = new net.minecraft.nbt.NbtList();
 		for (NbtCompound e : rows(cz, "src")) {
 			if (addedVal >= extra) break;
 			String id = str(e, "id");
@@ -607,9 +608,18 @@ public class PhoneScreen extends CraftNetScreen {
 			int take = (int) Math.min(Math.min(have, cap),
 					Math.ceil((extra - addedVal) / (double) price));
 			if (take <= 0) continue;
-			stakeAction(id, take);
+			NbtCompound it = new NbtCompound();
+			it.putString("id", id);
+			it.putInt("count", take);
+			batch.add(it);
 			poolCnt.put(id, poolCnt.getOrDefault(id, 0) + take);
 			addedVal += (long) take * price;
+		}
+		// один пакет на весь добор — иначе анти-макрос лимит отбросит «хвост» чипа
+		if (!batch.isEmpty()) {
+			NbtCompound a = new NbtCompound();
+			a.put("items", batch);
+			send("casino_stake_multi", a);
 		}
 	}
 

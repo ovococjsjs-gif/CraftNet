@@ -45,6 +45,9 @@ public final class ServerActions {
 
 	private static final Map<UUID, OpenCtx> OPEN = new java.util.concurrent.ConcurrentHashMap<>();
 
+	/** Анти-макрос: последний тик действия по игроку (мутации ≤ 1 раза в 0.1 с). */
+	private static final Map<UUID, Integer> LAST_ACT = new java.util.concurrent.ConcurrentHashMap<>();
+
 	// ровно столько, сколько реально рисуют экраны телефона — иначе пейджер
 	// «перепрыгивал» невидимые позиции (было 16 при 6 видимых строках)
 	private static final int SHOP_PAGE_SIZE = 6;
@@ -80,9 +83,9 @@ public final class ServerActions {
 		return BlockPos.fromLong(ctx.station()).getSquaredDistance(player.getBlockPos()) <= maxDist * maxDist;
 	}
 
-	/** Периодическая пересинхронизация открытых экранов (раз в секунду). */
+	/** Периодическая пересинхронизация открытых экранов (интервал — из конфига). */
 	public static void tickOpenScreens(MinecraftServer server, long tick) {
-		if (tick % 20 != 0) return;
+		if (tick % net.craftnet.config.CraftNetConfig.get().screenSyncTicks != 0) return;
 		for (Map.Entry<UUID, OpenCtx> e : OPEN.entrySet()) {
 			ServerPlayerEntity p = server.getPlayerManager().getPlayer(e.getKey());
 			if (p == null) {
@@ -129,7 +132,10 @@ public final class ServerActions {
 		NbtCompound args = payload.args() == null ? new NbtCompound() : payload.args();
 		try {
 			switch (action) {
-				case "close" -> OPEN.remove(player.getUuid());
+				case "close" -> {
+					OPEN.remove(player.getUuid());
+					LAST_ACT.remove(player.getUuid());
+				}
 				case "open" -> {
 					// H2: whitelist — кастомным пакетом разрешено открывать только телефон;
 					// стоечные экраны (pvz/bank/tower/job) открываются лишь ПКМ по станции
@@ -142,6 +148,14 @@ public final class ServerActions {
 					openScreen(player, "phone", null);
 				}
 				default -> {
+					// анти-макрос: не чаще одного действия за 2 тика (0.1 с) на игрока;
+					// после рестарта сервера (отрицательная разница) — пропускаем
+					MinecraftServer srv = player.getEntityWorld().getServer();
+					if (srv != null) {
+						int tnow = srv.getTicks();
+						Integer last = LAST_ACT.put(player.getUuid(), tnow);
+						if (last != null && tnow >= last && tnow - last < 2) return;
+					}
 					switch (screen) {
 						case "phone" -> handlePhone(player, action, args);
 						case "pvz" -> handlePvz(player, action, args);
@@ -198,6 +212,21 @@ public final class ServerActions {
 				int rc2 = CasinoManager.addStake(server, player, args.getString("id", ""),
 						args.getInt("count", 1));
 				switch (rc2) {
+					case 2 -> player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
+					case 3 -> player.sendMessage(Text.translatable("craftnet.casino.full"), true);
+					default -> { }
+				}
+			}
+			case "casino_stake_multi" -> {
+				// пакетный добор ставки (чипы x2/30%…): одно действие — много позиций
+				int worst = 0;
+				for (var el : args.getListOrEmpty("items")) {
+					if (!(el instanceof NbtCompound it)) continue;
+					int rc3 = CasinoManager.addStake(server, player,
+							it.getString("id", ""), it.getInt("count", 1));
+					if (rc3 > worst) worst = rc3;
+				}
+				switch (worst) {
 					case 2 -> player.sendMessage(Text.translatable("craftnet.casino.kinds"), true);
 					case 3 -> player.sendMessage(Text.translatable("craftnet.casino.full"), true);
 					default -> { }

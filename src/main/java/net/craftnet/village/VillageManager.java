@@ -65,7 +65,7 @@ public final class VillageManager {
 	/** На сколько тиров быстрее доставка (вычитается из множителя времени). */
 	public static final int[] LOGISTICS_BONUS = {0, 0, 0, 1, 2};
 	/** Скидка магазина при ур.4 (доля). */
-	public static final double SMART_TOWER_DISCOUNT = 0.05;
+	public static final double SMART_TOWER_DISCOUNT = net.craftnet.config.CraftNetConfig.get().shopSmartTowerDiscountPct / 100.0;
 
 	/** Радиус поиска деревень (в чанках, по уже сгенерированным — быстро). */
 	private static final int LOCATE_RADIUS = 64;

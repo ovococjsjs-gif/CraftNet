@@ -24,9 +24,9 @@ public final class MoneyManager {
 	private static final int TX_LOG_MAX = 16;
 
 	/** Дневной банковский процент на остаток (доля), потолок и минимальный баланс. */
-	public static final double DAILY_INTEREST = 0.0015;
-	public static final long INTEREST_CAP = 25;
-	public static final long INTEREST_MIN_BAL = 50;
+	public static final double DAILY_INTEREST = net.craftnet.config.CraftNetConfig.get().bankInterestPctPerDay / 100.0;
+	public static final long INTEREST_CAP = net.craftnet.config.CraftNetConfig.get().bankInterestCap;
+	public static final long INTEREST_MIN_BAL = net.craftnet.config.CraftNetConfig.get().bankInterestMinBalance;
 
 	public static MoneyState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(MoneyState.TYPE);
@@ -98,7 +98,7 @@ public final class MoneyManager {
 		if (Nbt2.i(rec, "phoneGiven") != 0) return false;
 		rec.putInt("phoneGiven", 1);
 		// стартовый капитал, чтобы экономика ожила сразу
-		if (Nbt2.lng(rec, "bal") == 0) rec.putLong("bal", 100);
+		if (Nbt2.lng(rec, "bal") == 0) rec.putLong("bal", net.craftnet.config.CraftNetConfig.get().startBonus);
 		saveRec(st, id, rec);
 		return true;
 	}

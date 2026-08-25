@@ -32,11 +32,11 @@ import net.craftnet.util.Nbt2;
 public final class MarketManager {
 	private MarketManager() {}
 
-	public static final double FEE = 0.05;
-	public static final long TTL_TICKS = 72000; // 3 игровых дня
-	public static final int RETURN_TICKS = 1200; // 1 минута
-	public static final int MAX_PER_PLAYER = 6;
-	public static final int PRICE_MAX = 1_000_000;
+	public static final double FEE = net.craftnet.config.CraftNetConfig.get().marketFeePct / 100.0;
+	public static final long TTL_TICKS = net.craftnet.config.CraftNetConfig.get().marketTtlTicks; // 3 игровых дня (конфиг)
+	public static final int RETURN_TICKS = net.craftnet.config.CraftNetConfig.get().marketReturnTicks; // 1 минута (конфиг)
+	public static final int MAX_PER_PLAYER = net.craftnet.config.CraftNetConfig.get().marketMaxPerPlayer;
+	public static final int PRICE_MAX = net.craftnet.config.CraftNetConfig.get().marketPriceMax;
 
 	// коды результата buy()
 	public static final int BUY_OK = 0;

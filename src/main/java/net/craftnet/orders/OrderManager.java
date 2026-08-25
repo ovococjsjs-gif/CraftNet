@@ -30,11 +30,11 @@ public final class OrderManager {
 	public static final int KIND_DELIVERY = 0;
 	public static final int KIND_PAYOUT = 1;
 
-	public static final int BASE_TRAVEL_TICKS = 2400; // 2 минуты при 4G (3G ×2, 2G ×3)
+	public static final int BASE_TRAVEL_TICKS = net.craftnet.config.CraftNetConfig.get().deliveryTravelTicks; // 2 мин при 4G (конфиг)
 
 	/** M5: незабранная доставка живёт 5 игровых дней после готовности, затем
 	 *  компенсируется деньгами (по цене продажи) и удаляется — стейт не растёт вечно. */
-	public static final long DELIVERY_TTL_TICKS = 120000;
+	public static final long DELIVERY_TTL_TICKS = net.craftnet.config.CraftNetConfig.get().deliveryTtlTicks;
 
 	public static OrdersState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(OrdersState.TYPE);

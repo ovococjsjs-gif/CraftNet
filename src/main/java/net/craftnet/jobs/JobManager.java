@@ -57,8 +57,8 @@ public final class JobManager {
 	private static final long TTL_LONG = 18000;  // 15 мин (крафт-заказы)
 
 	/** Неустойка за срыв смены: отмена 25% от оплаты, таймаут 30%. */
-	private static final double FEE_CANCEL = 0.25;
-	private static final double FEE_TIMEOUT = 0.30;
+	private static final double FEE_CANCEL = net.craftnet.config.CraftNetConfig.get().jobCancelFeePct / 100.0;
+	private static final double FEE_TIMEOUT = net.craftnet.config.CraftNetConfig.get().jobTimeoutFeePct / 100.0;
 
 	/** Палитра мини-игры завода. */
 	private static final String[] FACTORY_CATS = {
