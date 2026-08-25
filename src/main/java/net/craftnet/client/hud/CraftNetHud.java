@@ -40,6 +40,13 @@ public final class CraftNetHud {
 	private static volatile int navX, navY, navZ;
 	private static volatile String navName = "";
 	private static volatile String navJob = "";
+	// HUD-виджет активной смены
+	private static volatile boolean jobOn = false;
+	private static volatile String jobType = "";
+	private static volatile long jobRemainSec = 0;
+	private static volatile long jobPay = 0;
+	private static volatile int jobGot = 0, jobNeed = 1;
+	private static volatile boolean coolFlag = false;
 
 	public static void update(NbtCompound d) {
 		tier = d.getInt("sig", 0);
@@ -67,6 +74,16 @@ public final class CraftNetHud {
 			navName = nav.getString("name", "");
 			navJob = nav.getString("job", "");
 		}
+		NbtCompound job = d.getCompound("job").orElseGet(NbtCompound::new);
+		jobOn = !job.isEmpty();
+		if (jobOn) {
+			jobType = job.getString("type", "");
+			jobRemainSec = job.getLong("remain", 0L) / 20;
+			jobPay = job.getLong("pay", 0L);
+			jobGot = job.getInt("got", 0);
+			jobNeed = Math.max(1, job.getInt("need", 1));
+		}
+		coolFlag = d.getInt("cool", 0) == 1;
 		updatedTick = mc.world == null ? -1 : mc.world.getTime();
 	}
 
@@ -122,6 +139,7 @@ public final class CraftNetHud {
 				UiKit.COL_YELLOW, false);
 
 		// всплывашка дельты баланса: ~3.5 с, всплывает вверх и тает
+		// (при активном виджете смены — стартует над ним, не под ним)
 		if (flashStart >= 0) {
 			long age = mc.world.getTime() - flashStart;
 			if (age < 70) {
@@ -129,11 +147,55 @@ public final class CraftNetHud {
 				int col = (alpha << 24) | (flashGain ? 0x55FF55 : 0xFF5555);
 				int fw = mc.textRenderer.getWidth(flashText);
 				ctx.drawText(mc.textRenderer, Text.literal(flashText),
-						x + pw - 6 - fw, y - 10 - (int) (age / 10), col, true);
+						x + pw - 6 - fw, y - (jobOn ? 44 : 10) - (int) (age / 10), col, true);
 			}
 		}
 
 		if (navOn) renderNav(ctx, mc, w, h);
+
+		// виджет активной смены над основной панелью; без смены — строка
+		// «следующее окно работ» (только если в этом окне уже работали)
+		if (jobOn) {
+			renderJob(ctx, mc, x, y - 34, pw);
+		} else if (coolFlag) {
+			long t = mc.world.getTime();
+			long left = Math.max(0, (12000 - (t % 12000)) / 20);
+			String s = "окно работ через " + (left / 60) + ":" + String.format("%02d", left % 60);
+			ctx.drawText(mc.textRenderer, Text.literal(s),
+					x + pw - mc.textRenderer.getWidth(s), y - 12, UiKit.COL_TEXT_DIM, false);
+		}
+	}
+
+	/** Компактная карточка смены: тип + таймер, прогресс-бар, got/need и награда. */
+	private static void renderJob(DrawContext ctx, MinecraftClient mc, int x, int y, int pw) {
+		int ph = 28;
+		ctx.fill(x + 1, y, x + pw - 1, y + ph, 0x99101014);
+		ctx.fill(x, y + 1, x + pw, y + ph - 1, 0x99101014);
+		frame(ctx, x, y, pw, ph, UiKit.COL_LINE);
+
+		String left = jobShort(jobType);
+		ctx.drawText(mc.textRenderer, Text.literal(left), x + 6, y + 4, UiKit.COL_ACCENT, false);
+		String time = (jobRemainSec / 60) + ":" + String.format("%02d", jobRemainSec % 60);
+		ctx.drawText(mc.textRenderer, Text.literal(time),
+				x + pw - 6 - mc.textRenderer.getWidth(time), y + 4,
+				jobRemainSec < 120 ? UiKit.COL_RED : UiKit.COL_TEXT_DIM, false);
+
+		int frac = (int) (Math.min(jobGot, jobNeed) * 100L / jobNeed);
+		UiKit.progress(ctx, x + 6, y + 15, pw - 12, 4, frac,
+				jobGot >= jobNeed ? UiKit.COL_GREEN : UiKit.COL_YELLOW);
+		String pr = jobGot + "/" + jobNeed + " · " + jobPay + " CR";
+		ctx.drawText(mc.textRenderer, Text.literal(pr), x + 6, y + 21, UiKit.COL_TEXT_DIM, false);
+	}
+
+	private static String jobShort(String type) {
+		return switch (type) {
+			case "factory" -> "завод";
+			case "factory_order" -> "цеховой заказ";
+			case "cook" -> "повар";
+			case "loader" -> "грузчик";
+			case "courier" -> "курьер";
+			default -> "смена";
+		};
 	}
 
 	/** Стрелка-навигатор к цели доставки (по центру верха экрана). */

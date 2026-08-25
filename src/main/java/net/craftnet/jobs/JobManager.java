@@ -737,6 +737,55 @@ public final class JobManager {
 		return isCraftOrder(type) ? TTL_LONG : TTL_SHORT;
 	}
 
+	// -------------------- HUD-статус --------------------
+
+	/**
+	 * Компактный статус активной смены для HUD-виджета:
+	 * {type, remainSec, pay, got, need}. Пустой compound — смены нет.
+	 * Для крафт-заказов got/need считаются живым подсчётом целей в инвентаре
+	 * (та же семантика, что у сдачи), для доставок — груз при себе/carryNeed.
+	 */
+	public static NbtCompound hudJob(MinecraftServer server, ServerPlayerEntity player) {
+		NbtCompound rec = rec(state(server), player.getUuid());
+		if (rec.isEmpty()) return new NbtCompound();
+		String type = Nbt2.str(rec, "type");
+		NbtCompound data = Nbt2.sub(rec, "data");
+		NbtCompound o = new NbtCompound();
+		o.putString("type", type);
+		long now = server.getOverworld().getTime();
+		o.putLong("remain", Math.max(0, ttlOf(type) - (now - rec.getLong("since", 0L))));
+		o.putLong("pay", Nbt2.lng(data, "pay"));
+		int got = 0;
+		int need = 0;
+		if (T_FACTORY.equals(type)) {
+			got = data.getInt("parts", 0);
+			need = data.getInt("partsNeed", 1);
+		} else if (isCraftOrder(type)) {
+			for (var el : data.getListOrEmpty("targets")) {
+				if (!(el instanceof NbtCompound t)) continue;
+				Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(t, "id")));
+				if (item == null) continue;
+				need += Nbt2.i(t, "need");
+				got += Math.min(countInInventory(player, item), Nbt2.i(t, "need"));
+			}
+		} else {
+			Item cargo = T_LOADER.equals(type) ? ModBlocks.CARGO_CRATE.asItem() : ModItems.FOOD_BOX;
+			need = Math.max(1, rec.getInt("carryNeed", 1));
+			got = Math.min(countInInventory(player, cargo), need);
+		}
+		o.putInt("got", got);
+		o.putInt("need", Math.max(1, need));
+		return o;
+	}
+
+	/** Хотя бы один тип смены отработан в текущем окне (для HUD-строки окна). */
+	public static boolean anyWindowCooldown(MinecraftServer server, UUID player) {
+		for (String t : new String[]{T_FACTORY, T_FACTORY_ORDER, T_COOK, T_LOADER, T_COURIER}) {
+			if (onWindowCooldown(server, player, t)) return true;
+		}
+		return false;
+	}
+
 	/** Истечение сроков + тяжесть ящика + повторная подсветка целей. */
 	public static void tick(MinecraftServer server, long tick) {
 		if (tick % 20 == 0) tickCarryWeight(server);

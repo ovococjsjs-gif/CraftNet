@@ -594,6 +594,10 @@ public final class ServerActions {
 			StatsManager.set(server, p.getUuid(), StatsManager.BALANCE_NOW, bal);
 			NbtCompound nav = JobManager.navTarget(server, p.getUuid());
 			if (!nav.isEmpty()) d.put("jobNav", nav);
+			// HUD-виджет активной смены (тип/таймер/прогресс); cool — «окно работ» строка
+			NbtCompound jh = JobManager.hudJob(server, p);
+			if (!jh.isEmpty()) d.put("job", jh);
+			else if (JobManager.anyWindowCooldown(server, p.getUuid())) d.putInt("cool", 1);
 			ServerPlayNetworking.send(p, new ModPackets.HudSyncS2CPayload(d));
 		}
 	}
