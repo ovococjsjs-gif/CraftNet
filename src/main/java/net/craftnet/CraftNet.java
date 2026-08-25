@@ -57,9 +57,9 @@ public class CraftNet implements ModInitializer {
 				AdminCommands.register(dispatcher));
 
 		ServerLifecycleEvents.SERVER_STARTING.register(s -> server = s);
-		ServerLifecycleEvents.START_DATA_PACK_CONTENTS_RELOAD.register((s, rm) ->
+		ServerLifecycleEvents.START_DATA_PACK_RELOAD.register((s, rm) ->
 				CraftNet.LOGGER.info("[CraftNet] Релоад датапаков…"));
-		ServerLifecycleEvents.END_DATA_PACK_CONTENTS_RELOAD.register((s, rm, ok) ->
+		ServerLifecycleEvents.END_DATA_PACK_RELOAD.register((s, rm, ok) ->
 				VillageStructureInjector.inject(s));
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
 			server = s;

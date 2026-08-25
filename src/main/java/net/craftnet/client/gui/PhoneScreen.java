@@ -3,6 +3,7 @@ package net.craftnet.client.gui;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -547,7 +548,7 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, gx + 3, gy + 19, trim(str(e, "name"), 6), UiKit.COL_TEXT_DIM);
 			final String fid = str(e, "id");
 			clickable(gx, gy, cell - 4, 28,
-					() -> stakeAction(fid, net.minecraft.client.gui.screen.Screen.hasShiftDown() ? 8 : 1));
+					() -> stakeAction(fid, shiftHeld() ? 8 : 1));
 		}
 
 		// ================= результат / подсказка =================
@@ -643,6 +644,13 @@ public class PhoneScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 34, py3 + 3, (tpage + 1) + " / " + tpages, UiKit.COL_TEXT_DIM);
 		UiKit.button(ctx, textRenderer, x + 96, py3, 18, 13, ">", mx, my, tpage + 1 < tpages);
 		clickable(x + 96, py3, 18, 13, () -> casinoQuery(targetQuery, tpage + 1));
+	}
+
+	/** Зажат ли Shift (в 1.21.9+ Screen.hasShiftDown удалён — проверяем через InputUtil). */
+	private boolean shiftHeld() {
+		if (client == null || client.getWindow() == null) return false;
+		return InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_LEFT_SHIFT)
+				|| InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_RIGHT_SHIFT);
 	}
 
 	private void stakeAction(String id, int count) {
