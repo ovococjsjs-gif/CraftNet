@@ -201,8 +201,8 @@ public class PvzScreen extends CraftNetScreen {
 		int w = PW / 2 - 12;
 		UiKit.card(ctx, x, y, w, COLS_H, UiKit.COL_PANEL_HI);
 		UiKit.label(ctx, textRenderer, x + 6, y + 5, "Продажа", UiKit.COL_ACCENT);
-		// UX-5: подпись полей и кнопок — раньше было неочевидно, куда вводить цену лота
-		UiKit.label(ctx, textRenderer, x + 6, y + 14, "всё — сразу ↓, ₽ — лотом (шт · цена ↑)",
+		// UX-5: подписи полей и кнопок; «шт» делят продажа и лот (пусто = всё)
+		UiKit.label(ctx, textRenderer, x + 6, y + 14, "шт — кол-во (пусто = всё), ₽ — лот по цене ↑",
 				UiKit.COL_TEXT_DIM);
 		var sell = rows(data, "sell");
 		if (sell.isEmpty()) {
@@ -220,8 +220,11 @@ public class PvzScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, x + 28, ry + 12, i(c, "price") + " CR/шт", UiKit.COL_YELLOW);
 			final String fid = str(c, "id");
 			final int have = i(c, "count");
-			UiKit.button(ctx, textRenderer, x + w - 64, ry + 5, 30, 13, "всё", mx, my, have >= 1);
-			clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(fid, have));
+			// продажа частью: с «шт» в поле — ровно столько (кнопка показывает сколько)
+			int sellN = lotCount() > 0 ? Math.min(lotCount(), have) : have;
+			UiKit.button(ctx, textRenderer, x + w - 64, ry + 5, 30, 13,
+					lotCount() > 0 ? "×" + sellN : "всё", mx, my, sellN >= 1);
+			clickable(x + w - 64, ry + 5, 30, 13, () -> sellAction(fid, sellN));
 			// пустое поле «шт» = выставить всё (до 64) — поэтому кнопке хватит цены
 			UiKit.button(ctx, textRenderer, x + w - 30, ry + 5, 18, 13, "₽", mx, my,
 					have >= 1 && price() > 0);
@@ -286,6 +289,7 @@ public class PvzScreen extends CraftNetScreen {
 	}
 
 	private void sellAction(String id, int n) {
+		if (n <= 0) return;
 		NbtCompound a = new NbtCompound();
 		a.putString("id", id);
 		a.putInt("count", n);

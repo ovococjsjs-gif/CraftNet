@@ -369,13 +369,20 @@ public final class VillageManager {
 				int r = 16 + (i % 2) * 7 + rng.nextInt(6); // 16..29
 				int x = cx + (int) Math.round(Math.cos(ang) * r);
 				int z = cz + (int) Math.round(Math.sin(ang) * r);
-				int y = flatSpotY(world, x, z);
+				// поворот выбираем ДО замера: зонд проверяет именно тот футпринт,
+				// который займёт шаблон (раньше мерили ±4 м от якоря — края висели)
+				BlockRotation rot = BlockRotation.values()[rng.nextInt(4)];
+				var size = tpl.getSize();
+				int sx = size.getX(), sz = size.getZ();
+				boolean swap = rot == BlockRotation.CLOCKWISE_90
+						|| rot == BlockRotation.COUNTERCLOCKWISE_90;
+				int w = swap ? sz : sx;
+				int d = swap ? sx : sz;
+				int y = flatFootprintY(world, x, z, w, d);
 				if (y < 0) continue;
 
-				BlockRotation rot = BlockRotation.values()[rng.nextInt(4)];
 				StructurePlacementData data = new StructurePlacementData().setRotation(rot);
-				var size = tpl.getSize();
-				BlockPos corner = computeCorner(size.getX(), size.getZ(), x, y, z, rot);
+				BlockPos corner = computeCorner(sx, sz, x, y, z, rot);
 				try {
 					tpl.place(world, corner, corner, data, world.getRandom(), Block.NOTIFY_LISTENERS);
 					doneMask |= 1 << i;
@@ -413,22 +420,23 @@ public final class VillageManager {
 	}
 
 	/**
-	 * Плоская площадка под здание: замеры высот в 9 точках (±4 м),
+	 * Плоская площадка под РОВНО тот футпринт, что займёт здание (после поворота):
+	 * замеры высот в 9 точках прямоугольника (углы + середины рёбер + центр),
 	 * все чанки сгенерированы, разброс высот ≤ 2 блоков.
-	 * @return Y поверхности или -1, если место неподходящее.
+	 * @return Y поверхности в центре или -1, если место неподходящее.
 	 */
-	private static int flatSpotY(ServerWorld world, int x, int z) {
-		if (!world.isChunkLoaded(x >> 4, z >> 4)) return -1;
-		if (!world.isChunkLoaded((x + 5) >> 4, (z + 5) >> 4)) return -1;
-		if (!world.isChunkLoaded((x - 5) >> 4, (z - 5) >> 4)) return -1;
+	private static int flatFootprintY(ServerWorld world, int x, int z, int w, int d) {
 		int min = Integer.MAX_VALUE;
 		int max = Integer.MIN_VALUE;
 		int cy = -1;
-		for (int dx = -4; dx <= 4; dx += 4) {
-			for (int dz = -4; dz <= 4; dz += 4) {
-				int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x + dx, z + dz);
+		for (int ix = 0; ix < 3; ix++) {
+			for (int iz = 0; iz < 3; iz++) {
+				int px = ix == 0 ? x : ix == 1 ? x + (w - 1) / 2 : x + w - 1;
+				int pz = iz == 0 ? z : iz == 1 ? z + (d - 1) / 2 : z + d - 1;
+				if (!world.isChunkLoaded(px >> 4, pz >> 4)) return -1;
+				int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, px, pz);
 				if (y <= world.getBottomY() + 1) return -1;
-				if (dx == 0 && dz == 0) cy = y;
+				if (ix == 1 && iz == 1) cy = y;
 				min = Math.min(min, y);
 				max = Math.max(max, y);
 			}

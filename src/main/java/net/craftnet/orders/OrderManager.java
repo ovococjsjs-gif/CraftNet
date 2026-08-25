@@ -272,7 +272,12 @@ public final class OrderManager {
 			if (dx * dx + dz * dz > 96.0 * 96.0) return false;
 			ItemStack stack = decodeStack(server, Nbt2.sub(o, "item"));
 			if (stack.isEmpty()) return false;
-			player.getInventory().offerOrDrop(stack);
+			// overstack (куплено >64 одного вида) выдаём несколькими нормальными стаками —
+			// иначе single-stack 640 штук ловил глюки в хопперах/дропе
+			while (!stack.isEmpty()) {
+				player.getInventory().offerOrDrop(
+						stack.split(Math.min(stack.getMaxCount(), stack.getCount())));
+			}
 			StatsManager.bump(server, player.getUuid(), StatsManager.PARCELS, 1);
 			StatsManager.addXp(server, player.getUuid(), 2);
 			NbtList nl = (NbtList) list.copy();
