@@ -1445,11 +1445,16 @@ public class PhoneScreen extends CraftNetScreen {
 				"ставки " + lng(c, "casinoWagered") + " · призы +" + earnCasino, UiKit.COL_TEXT_DIM);
 		ry2 += 11;
 		UiKit.label(ctx, textRenderer, rx2, ry2,
+				"лучший выигрыш: +" + lng(c, "casinoBest") + " CR",
+				lng(c, "casinoBest") > 0 ? UiKit.COL_GREEN : UiKit.COL_TEXT_DIM);
+		ry2 += 11;
+		UiKit.label(ctx, textRenderer, rx2, ry2,
 				"барахолка: " + lng(c, "marketListed") + " лот · " + lng(c, "marketBought") + " купл.",
 				UiKit.COL_TEXT_DIM);
 		ry2 += 11;
 		UiKit.label(ctx, textRenderer, rx2, ry2,
-				"переводы → " + lng(c, "transfersSent") + " CR", UiKit.COL_TEXT_DIM);
+				"переводы → " + lng(c, "transfersSent") + " · ← " + lng(c, "transfersGot") + " CR",
+				UiKit.COL_TEXT_DIM);
 
 		// ---- подвал: счётчик достижений ----
 		int un = 0;

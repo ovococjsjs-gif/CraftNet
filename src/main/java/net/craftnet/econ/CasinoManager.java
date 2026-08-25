@@ -200,6 +200,9 @@ public final class CasinoManager {
 		if (win) {
 			StatsManager.bump(server, player.getUuid(), StatsManager.SPIN_WINS, 1);
 			StatsManager.bump(server, player.getUuid(), StatsManager.CASINO_WON, targetVal);
+			if (targetVal > StatsManager.get(server, player.getUuid(), StatsManager.CASINO_BEST)) {
+				StatsManager.set(server, player.getUuid(), StatsManager.CASINO_BEST, targetVal);
+			}
 			StatsManager.addXp(server, player.getUuid(), 15);
 			player.getInventory().offerOrDrop(new ItemStack(target));
 			player.sendMessage(Text.translatable("craftnet.casino.win", tname, pct), false);

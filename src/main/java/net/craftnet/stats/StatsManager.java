@@ -48,6 +48,7 @@ public final class StatsManager {
 	public static final String SPIN_WINS = "spinWins";
 	public static final String CASINO_WAGERED = "casinoWagered";
 	public static final String CASINO_WON = "casinoWon";
+	public static final String CASINO_BEST = "casinoBest"; // лучший одиночный выигрыш (по цене приза)
 	public static final String STOCKS_BOUGHT = "stocksBought";
 	public static final String STOCKS_EARN = "stocksEarn"; // продажа акций + дивиденды
 	public static final String DIVIDENDS = "dividendsGot";
