@@ -642,6 +642,29 @@ public final class ServerActions {
 		NbtCompound nav = JobManager.navTarget(server, player.getUuid());
 		if (!nav.isEmpty()) d.put("jobNav", nav);
 
+		// входящие (баннер на домашнем экране): посылки в пути + ожидаемые выплаты
+		long now = server.getOverworld().getTime();
+		int parcels = 0;
+		long parcelEta = Long.MAX_VALUE;
+		for (NbtCompound o2 : OrderManager.deliveriesOf(server, player.getUuid(), now)) {
+			parcels++;
+			parcelEta = Math.min(parcelEta,
+					o2.getInt("readyNow", 0) == 1 ? 0 : o2.getLong("etaSec", 0L));
+		}
+		long payN = 0, payS = 0, payEta = Long.MAX_VALUE;
+		for (NbtCompound p2 : OrderManager.payoutsOf(server, player.getUuid(), now)) {
+			payN++;
+			payS += p2.getLong("payout", 0L);
+			payEta = Math.min(payEta, p2.getLong("etaSec", 0L));
+		}
+		NbtCompound inb = new NbtCompound();
+		inb.putInt("parcels", parcels);
+		inb.putLong("parcelEta", parcelEta == Long.MAX_VALUE ? -1 : parcelEta);
+		inb.putLong("payN", payN);
+		inb.putLong("paySum", payS);
+		inb.putLong("payEta", payEta == Long.MAX_VALUE ? -1 : payEta);
+		d.put("inbound", inb);
+
 		NbtList stocks = new NbtList();
 		for (NbtCompound row : StocksManager.clientRows(server, player.getUuid())) stocks.add(row);
 		d.put("stocks", stocks);

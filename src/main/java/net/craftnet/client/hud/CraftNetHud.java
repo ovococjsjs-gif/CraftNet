@@ -30,6 +30,11 @@ public final class CraftNetHud {
 	private static volatile boolean gpsOk = false;
 	private static volatile long balance = 0;
 	private static volatile long updatedTick = -1;
+	// всплывающая дельта баланса («+350 CR» / «−120 CR») — живой фидбек с HUD-пульса
+	private static volatile long prevBal = -1;
+	private static volatile String flashText = "";
+	private static volatile boolean flashGain;
+	private static volatile long flashStart = -1;
 	// навигатор доставки
 	private static volatile boolean navOn = false;
 	private static volatile int navX, navY, navZ;
@@ -43,7 +48,16 @@ public final class CraftNetHud {
 		dist = d.getInt("dist", -1);
 		offline = d.getInt("off", 0) == 1;
 		gpsOk = d.getInt("gps", 0) == 1;
-		balance = d.getLong("bal", 0L);
+		MinecraftClient mc = MinecraftClient.getInstance();
+		long newBal = d.getLong("bal", 0L);
+		if (prevBal >= 0 && newBal != prevBal) {
+			long delta = newBal - prevBal;
+			flashText = (delta > 0 ? "+" : "−") + UiKit.fmt(Math.abs(delta)) + " CR";
+			flashGain = delta > 0;
+			flashStart = mc.world == null ? -1 : mc.world.getTime();
+		}
+		prevBal = newBal;
+		balance = newBal;
 		NbtCompound nav = d.getCompound("jobNav").orElseGet(NbtCompound::new);
 		navOn = !nav.isEmpty();
 		if (navOn) {
@@ -53,7 +67,6 @@ public final class CraftNetHud {
 			navName = nav.getString("name", "");
 			navJob = nav.getString("job", "");
 		}
-		MinecraftClient mc = MinecraftClient.getInstance();
 		updatedTick = mc.world == null ? -1 : mc.world.getTime();
 	}
 
@@ -107,6 +120,18 @@ public final class CraftNetHud {
 		String bal = UiKit.fmt(balance) + " CR";
 		ctx.drawText(mc.textRenderer, Text.literal(bal), x + pw - 6 - mc.textRenderer.getWidth(bal), y + 14,
 				UiKit.COL_YELLOW, false);
+
+		// всплывашка дельты баланса: ~3.5 с, всплывает вверх и тает
+		if (flashStart >= 0) {
+			long age = mc.world.getTime() - flashStart;
+			if (age < 70) {
+				int alpha = age < 50 ? 255 : Math.max(20, (int) (255 * (70 - age) / 20.0));
+				int col = (alpha << 24) | (flashGain ? 0x55FF55 : 0xFF5555);
+				int fw = mc.textRenderer.getWidth(flashText);
+				ctx.drawText(mc.textRenderer, Text.literal(flashText),
+						x + pw - 6 - fw, y - 10 - (int) (age / 10), col, true);
+			}
+		}
 
 		if (navOn) renderNav(ctx, mc, w, h);
 	}

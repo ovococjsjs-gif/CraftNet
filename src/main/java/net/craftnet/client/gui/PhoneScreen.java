@@ -162,6 +162,11 @@ public class PhoneScreen extends CraftNetScreen {
 		}
 	}
 
+	/** m:ss из секунд (для баннера входящих). */
+	private static String mmss(long sec) {
+		return (sec / 60) + ":" + String.format("%02d", sec % 60);
+	}
+
 	private void drawTabIcon(DrawContext ctx, int x, int y, Item icon, Tab t, double mx, double my) {
 		boolean active = tab == t;
 		boolean hover = mx >= x && mx < x + 36 && my >= y && my < y + 20;
@@ -240,9 +245,9 @@ public class PhoneScreen extends CraftNetScreen {
 		int idx = 0;
 		for (App app : apps) {
 			int ax = x + 14 + (idx % 3) * 84;
-			int ay = y + 4 + (idx / 3) * 56;
-			UiKit.card(ctx, ax, ay, 78, 50, UiKit.COL_PANEL);
-			ctx.drawItem(app.icon(), ax + 8, ay + 17);
+			int ay = y + 4 + (idx / 3) * 50; // компактнее: освобождаем строку под баннер
+			UiKit.card(ctx, ax, ay, 78, 46, UiKit.COL_PANEL);
+			ctx.drawItem(app.icon(), ax + 8, ay + 15);
 			UiKit.label(ctx, textRenderer, ax + 28, ay + 13, app.name(), UiKit.COL_TEXT);
 			String sub = switch (app.tab()) {
 				case PROFILE -> "ур." + i(sub(data, "profile"), "lvl")
@@ -255,14 +260,33 @@ public class PhoneScreen extends CraftNetScreen {
 				case CASINO -> luckSub();
 				default -> "";
 			};
-			UiKit.label(ctx, textRenderer, ax + 28, ay + 27, sub,
+			UiKit.label(ctx, textRenderer, ax + 28, ay + 25, sub,
 					(app.tab() == Tab.GPS && i(data, "gpsOk") != 1)
 							|| (app.tab() == Tab.SHOP && i(data, "signal") < 1)
 							|| (app.tab() == Tab.MARKET && i(data, "signal") < 1)
 							|| (app.tab() == Tab.STOCKS && !stocksUtc())
 							? UiKit.COL_RED : UiKit.COL_TEXT_DIM);
-			clickable(ax, ay, 78, 50, () -> switchTab(app.tab()));
+			clickable(ax, ay, 78, 46, () -> switchTab(app.tab()));
 			idx++;
+		}
+
+		// баннер входящих (посылки в пути + ожидаемые выплаты) — только когда есть что-то
+		NbtCompound inb = sub(data, "inbound");
+		int parcels = i(inb, "parcels");
+		long payN = lng(inb, "payN");
+		if (parcels > 0 || payN > 0) {
+			UiKit.card(ctx, x + 14, y + 150, PW - 28, 15, UiKit.COL_PANEL_HI);
+			String p1 = parcels > 0
+					? "Посылок: " + parcels + (lng(inb, "parcelEta") >= 0
+							? " · " + mmss(lng(inb, "parcelEta")) : "")
+					: "";
+			String p2 = payN > 0
+					? "Выплат: +" + UiKit.fmt(lng(inb, "paySum")) + " CR"
+							+ (lng(inb, "payEta") >= 0 ? " · " + mmss(lng(inb, "payEta")) : "")
+					: "";
+			UiKit.label(ctx, textRenderer, x + 22, y + 154, trim(
+					p1 + (parcels > 0 && payN > 0 ? "  |  " : "") + p2, 44),
+					parcels > 0 ? UiKit.COL_ACCENT : UiKit.COL_GREEN);
 		}
 		// карточка сети (компактная, в строку под сеткой 3×3)
 		UiKit.card(ctx, x + 14, y + 168, PW - 28, 24, UiKit.COL_PANEL_HI);
