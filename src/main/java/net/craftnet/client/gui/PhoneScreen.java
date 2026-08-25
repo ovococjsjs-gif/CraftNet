@@ -1011,7 +1011,7 @@ public class PhoneScreen extends CraftNetScreen {
 			return;
 		}
 		if (mc() == null || mc().player == null || mc().world == null) return;
-		if (map == null) map = new GpsMapRenderer();
+		if (map == null) map = GpsMapRenderer.get(); // синглтон (M6)
 		map.resampleIfNeeded(mc().player, mc().world);
 		lastMouseX = mx;
 		lastMouseY = my;

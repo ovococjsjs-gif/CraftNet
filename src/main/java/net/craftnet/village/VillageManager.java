@@ -447,6 +447,9 @@ public final class VillageManager {
 			v.putInt("tx", towerPos.getX());
 			v.putInt("ty", towerPos.getY());
 			v.putInt("tz", towerPos.getZ());
+			// M1: свежепостроенная вышка = деревня онлайн (иначе «вечный офлайн»,
+			// если off=1 успел встать до появления вышки)
+			v.putInt("off", 0);
 			net.craftnet.CraftNet.LOGGER.info("[CraftNet] Вышка связи построена: {} @ {}",
 					Nbt2.str(v, "name"), towerPos.toShortString());
 		}
@@ -560,9 +563,10 @@ public final class VillageManager {
 			boolean towerHere = Nbt2.i(v, "ty") == pos.getY()
 					&& Nbt2.i(v, "tx") == pos.getX()
 					&& Nbt2.i(v, "tz") == pos.getZ();
-			boolean nearTower = Nbt2.i(v, "ty") < 0
-					&& dist2(v, pos) < 96 * 96;
-			if (towerHere || nearTower) {
+			// M1: офлайн ставим только деревне, чьё ПРИКРЕПЛЁННОЕ ядро сломали.
+			// Соседство с безвышковой деревней (ty<0) её не трогает — иначе она
+			// уходила в офлайн, не имея вышки вовсе.
+			if (towerHere) {
 				v.putInt("off", 1);
 				map.put(k, v);
 				dirty = true;

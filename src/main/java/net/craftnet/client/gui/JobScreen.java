@@ -254,16 +254,33 @@ public class JobScreen extends CraftNetScreen {
 		long ttlSec = lng(offer, "ttl") / 20;
 		UiKit.label(ctx, textRenderer, x + 10, ly, "срок: " + (ttlSec / 60) + " мин", UiKit.COL_TEXT_DIM);
 
+		// M7: показываем, когда сменится слепок оффера (окно 10 мин); при принятии
+		// сервер восстановит ровно этот слепок даже после смены окна
+		long winLeft = winLeftSec();
+		if (winLeft >= 0) {
+			UiKit.label(ctx, textRenderer, x + 10, y + h - 12,
+					"новый состав через " + (winLeft / 60) + ":" + String.format("%02d", winLeft % 60),
+					UiKit.COL_TEXT_DIM);
+		}
 		UiKit.label(ctx, textRenderer, x + 10, y + h - 24, "награда: " + lng(offer, "pay") + " CR", UiKit.COL_GREEN);
 		UiKit.button(ctx, textRenderer, x + w - 86, y + h - 27, 76, 17, "Принять", mx, my, true);
 		clickable(x + w - 86, y + h - 27, 76, 17, () -> {
 			NbtCompound a = new NbtCompound();
 			a.putString("type", type);
+			a.putLong("win", lng(offer, "win"));
 			send("accept", a);
 		});
 	}
 
 	// ------------------------------ утилиты ------------------------------
+
+	/** Сколько секунд осталось до смены 10-минутного окна офферов (-1 — нет мира). */
+	private static long winLeftSec() {
+		MinecraftClient mc = MinecraftClient.getInstance();
+		if (mc == null || mc.world == null) return -1;
+		long t = mc.world.getTime();
+		return Math.max(0, (12000 - (t % 12000)) / 20);
+	}
 
 	private static int countClient(Item item) {
 		if (item == null) return 0;

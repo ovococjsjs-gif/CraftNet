@@ -120,11 +120,27 @@ public final class JobManager {
 
 	// -------------------- генерация офферов --------------------
 
+	/** Текущее 10-минутное окно офферов. */
+	public static long offerWindow(MinecraftServer server) {
+		return server.getOverworld().getTime() / 12000;
+	}
+
 	/** Построить оффер для экрана (null, если доступного нет). */
 	public static NbtCompound buildOffer(ServerPlayerEntity player, String type) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return null;
-		java.util.Random rng = new java.util.Random(player.getUuid().hashCode() ^ (server.getOverworld().getTime() / 12000));
+		return buildOffer(player, type, offerWindow(server));
+	}
+
+	/**
+	 * Оффер для конкретного окна (M7): клиент показывает слепок окна N и при
+	 * принятии присылает его номер — сервер восстанавливает ровно тот же оффер,
+	 * даже если между показом и кликом окно перевалило.
+	 */
+	public static NbtCompound buildOffer(ServerPlayerEntity player, String type, long win) {
+		MinecraftServer server = player.getEntityWorld().getServer();
+		if (server == null) return null;
+		java.util.Random rng = new java.util.Random(player.getUuid().hashCode() ^ win);
 
 		NbtCompound offer = new NbtCompound();
 		switch (type) {
@@ -165,6 +181,7 @@ public final class JobManager {
 		}
 		offer.putString("type", type);
 		offer.putLong("ttl", ttlOf(type));
+		offer.putLong("win", win);
 		return offer;
 	}
 
@@ -239,9 +256,21 @@ public final class JobManager {
 	 * клиент не может подделать параметры.
 	 */
 	public static boolean accept(ServerPlayerEntity player, String type) {
+		return accept(player, type, -1L);
+	}
+
+	/**
+	 * Принять задание, указав окно оффера (M7): принимается только текущее
+	 * или предыдущее 10-минутное окно — слепок, который реально видел игрок
+	 * (подделать чужое окно нельзя: зерно = uuid ⊗ win).
+	 */
+	public static boolean accept(ServerPlayerEntity player, String type, long win) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null || hasJob(server, player.getUuid())) return false;
-		NbtCompound offer = buildOffer(player, type);
+		long cur = offerWindow(server);
+		if (win < 0 || win > cur) win = cur;
+		else if (win < cur - 1) win = cur; // слишком старый слепок — берём свежий
+		NbtCompound offer = buildOffer(player, type, win);
 		if (offer == null) return false;
 		JobsState st = state(server);
 		NbtCompound rec = new NbtCompound();

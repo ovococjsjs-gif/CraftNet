@@ -32,6 +32,10 @@ public final class OrderManager {
 
 	public static final int BASE_TRAVEL_TICKS = 2400; // 2 минуты при 4G (3G ×2, 2G ×3)
 
+	/** M5: незабранная доставка живёт 5 игровых дней после готовности, затем
+	 *  компенсируется деньгами (по цене продажи) и удаляется — стейт не растёт вечно. */
+	public static final long DELIVERY_TTL_TICKS = 120000;
+
 	public static OrdersState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(OrdersState.TYPE);
 	}
@@ -97,7 +101,7 @@ public final class OrderManager {
 		return o.getLong("id", 0L);
 	}
 
-	/** Серверный тик: обработка дозревших выплат (раз в 20 тиков). */
+	/** Серверный тик: обработка дозревших выплат, уведомлений и TTL доставок (раз в 20 тиков). */
 	public static void tick(MinecraftServer server) {
 		if (server.getTicks() % 20 != 0) return;
 		OrdersState st = state(server);
@@ -105,15 +109,41 @@ public final class OrderManager {
 		if (list.isEmpty()) return;
 		long now = server.getOverworld().getTime();
 		List<Integer> toRemove = new ArrayList<>();
+		List<NbtCompound> refunds = new ArrayList<>(); // {owner, amount, comment}
 		for (int i = 0; i < list.size(); i++) {
 			final int idx = i;
 			NbtElement el = list.get(idx);
 			if (!(el instanceof NbtCompound o)) continue;
-			if (o.getLong("ready", Long.MAX_VALUE) > now) continue;
-			if (o.getInt("kind", 0) == KIND_DELIVERY) {
+			int kind = o.getInt("kind", 0);
+			long ready = o.getLong("ready", Long.MAX_VALUE);
+			if (kind == KIND_DELIVERY) {
+				// M5: TTL после готовности — компенсация деньгами и удаление
+				if (ready <= now && now - ready > DELIVERY_TTL_TICKS) {
+					ItemStack stack = decodeStack(server, Nbt2.sub(o, "item"));
+					long value = 0;
+					if (!stack.isEmpty()) {
+						String iid = net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString();
+						value = (long) net.craftnet.econ.PriceManager.sellPrice(iid) * stack.getCount();
+						if (value > 0) {
+							NbtCompound r = new NbtCompound();
+							r.putString("owner", o.getString("owner", ""));
+							r.putLong("amount", value);
+							r.putString("comment", "заказ истёк: "
+									+ stack.getName().getString() + " ×" + stack.getCount());
+							refunds.add(r);
+						}
+					}
+					net.craftnet.CraftNet.LOGGER.info(
+							"[CraftNet] Заказ #{} истёк без получения — удалён (компенсация {} CR)",
+							o.getLong("id", 0L), value);
+					toRemove.add(i);
+					continue;
+				}
+				if (ready > now) continue;
 				// доставка созрела: одноразовое уведомление игроку в чат
 				if (o.getBoolean("ntf", false)) continue;
 				o.putBoolean("ntf", true);
+				st.data().put("orders", list); // положить обратно на случай копии getListOrEmpty
 				st.markDirty();
 				try {
 					UUID owner = UUID.fromString(o.getString("owner", ""));
@@ -130,7 +160,8 @@ public final class OrderManager {
 				}
 				continue;
 			}
-			if (o.getInt("kind", 0) != KIND_PAYOUT) continue;
+			if (ready > now) continue;
+			if (kind != KIND_PAYOUT) continue;
 			String ownerStr = o.getString("owner", "");
 			try {
 				UUID owner = UUID.fromString(ownerStr);
@@ -148,11 +179,20 @@ public final class OrderManager {
 				toRemove.add(i);
 			}
 		}
-		if (toRemove.isEmpty()) return;
-		NbtList nl = (NbtList) list.copy();
-		for (int i = toRemove.size() - 1; i >= 0; i--) nl.remove(toRemove.get(i).intValue());
-		st.data().put("orders", nl);
-		st.markDirty();
+		if (!toRemove.isEmpty()) {
+			NbtList nl = (NbtList) list.copy();
+			for (int i = toRemove.size() - 1; i >= 0; i--) nl.remove(toRemove.get(i).intValue());
+			st.data().put("orders", nl);
+			st.markDirty();
+		}
+		// компенсации — ПОСЛЕ перезаписи списка, чтобы newPayout не перетёр наши удаления
+		for (NbtCompound r : refunds) {
+			try {
+				newPayout(server, UUID.fromString(r.getString("owner", "")),
+						r.getLong("amount", 0L), r.getString("comment", ""), now);
+			} catch (IllegalArgumentException ignored) {
+			}
+		}
 	}
 
 	/** Все заказы игрока (доставки) для экрана ПВЗ. */

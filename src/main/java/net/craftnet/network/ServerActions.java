@@ -408,12 +408,17 @@ public final class ServerActions {
 				int n = MarketManager.cancelMine(server, player);
 				player.sendMessage(Text.translatable("craftnet.market.canceled", n), true);
 			}
+			case "job_cancel" -> {
+				// M2: отмена задания кнопкой из ПВЗ (штраф стандартный)
+				if (!JobManager.hasJob(server, player.getUuid())) return;
+				JobManager.cancel(server, player.getUuid(), false);
+			}
 			case "loader_start" -> {
 				if (JobManager.hasJob(server, player.getUuid())) {
 					player.sendMessage(Text.translatable("craftnet.job.have_job"), false);
 					return;
 				}
-				if (!JobManager.accept(player, JobManager.T_LOADER)) {
+				if (!JobManager.accept(player, JobManager.T_LOADER, args.getLong("win", -1L))) {
 					player.sendMessage(Text.translatable("craftnet.job.no_offer"), false);
 				}
 			}
@@ -445,11 +450,15 @@ public final class ServerActions {
 					return;
 				}
 				if (!MoneyManager.tryCharge(server, player.getUuid(), amount, "обналичивание")) return;
+				// M4: выдаём банкноты стаками до 64, а не по одной в стак
 				int rest = amount;
 				for (int d : DENOMS) {
-					while (rest >= d) {
-						player.getInventory().offerOrDrop(BanknoteItem.ofValue(d));
-						rest -= d;
+					int notes = rest / d;
+					rest -= notes * d;
+					while (notes > 0) {
+						int n = Math.min(notes, 64);
+						player.getInventory().offerOrDrop(BanknoteItem.ofValue(d, n));
+						notes -= n;
 					}
 				}
 				player.sendMessage(Text.translatable("craftnet.bank.cashout", amount), false);
@@ -505,8 +514,9 @@ public final class ServerActions {
 					return;
 				}
 				String real = args.getString("type", type);
-				// оффер детерминированно пересоздаётся в accept → подделка невозможна
-				if (!JobManager.accept(player, real)) {
+				// оффер детерминированно пересоздаётся в accept → подделка невозможна;
+				// win — окно показанного слепка (M7), принимаем текущее/предыдущее
+				if (!JobManager.accept(player, real, args.getLong("win", -1L))) {
 					player.sendMessage(Text.translatable("craftnet.job.no_offer"), false);
 				}
 			}
@@ -814,9 +824,16 @@ public final class ServerActions {
 
 		// работа грузчиком прямо с ПВЗ
 		d.putInt("myLots", MarketManager.listingsOf(server, player.getUuid()));
-		d.putInt("hasJob", JobManager.hasJob(server, player.getUuid()) ? 1 : 0);
-		NbtCompound offer = JobManager.hasJob(server, player.getUuid()) ? null : JobManager.buildOffer(player, JobManager.T_LOADER);
-		if (offer != null) d.put("loaderOffer", offer);
+		boolean hasJob = JobManager.hasJob(server, player.getUuid());
+		d.putInt("hasJob", hasJob ? 1 : 0);
+		if (hasJob) {
+			// M2: какая смена висит — для строки статуса и кнопки отмены
+			d.putString("jobType", net.craftnet.util.Nbt2.str(
+					JobManager.jobView(server, player.getUuid()), "type"));
+		} else {
+			NbtCompound offer = JobManager.buildOffer(player, JobManager.T_LOADER);
+			if (offer != null) d.put("loaderOffer", offer);
+		}
 	}
 
 	private static void fillBankSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d) {

@@ -22,7 +22,12 @@ public class BanknoteItem extends Item {
 	}
 
 	public static ItemStack ofValue(int value) {
-		ItemStack s = new ItemStack(net.craftnet.item.ModItems.BANKNOTE);
+		return ofValue(value, 1);
+	}
+
+	/** M4: стак банкнот одного номинала (обналичивание складывает до 64). */
+	public static ItemStack ofValue(int value, int count) {
+		ItemStack s = new ItemStack(net.craftnet.item.ModItems.BANKNOTE, Math.max(1, count));
 		s.set(ModComponents.BANKNOTE_VALUE, value);
 		return s;
 	}

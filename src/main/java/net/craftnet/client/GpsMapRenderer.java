@@ -26,6 +26,14 @@ import net.craftnet.client.gl.RenderPipelinesHolder;
 public final class GpsMapRenderer {
 	public static final int SIZE = 160;
 
+	/** M6: синглтон — иначе каждый PhoneScreen регистрировал заново одну и ту же динамическую текстуру. */
+	private static GpsMapRenderer instance;
+
+	public static GpsMapRenderer get() {
+		if (instance == null) instance = new GpsMapRenderer();
+		return instance;
+	}
+
 	private final NativeImageBackedTexture texture;
 	private final Identifier id = CraftNet.id("gps_dynamic");
 	private boolean registered;
@@ -36,7 +44,7 @@ public final class GpsMapRenderer {
 	private int zoom = 1;
 	private int lastZoom = -1;
 
-	public GpsMapRenderer() {
+	private GpsMapRenderer() {
 		texture = new NativeImageBackedTexture(() -> "craftnet/gps", SIZE, SIZE, true);
 	}
 

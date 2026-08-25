@@ -34,6 +34,7 @@
   "craftnet.job.fined": "Shift-wrecking fine: -%s CR",
   "craftnet.job.have_job": "Finish your current job first.",
   "craftnet.job.missing_items": "Missing items to turn in the order.",
+  "craftnet.job.no_active": "No active job.",
   "craftnet.job.no_cargo": "You don't have the cargo to deliver.",
   "craftnet.job.no_offer": "Job unavailable (no villagers nearby?).",
   "craftnet.job.paid": "Job paid: +%s CR (%s).",

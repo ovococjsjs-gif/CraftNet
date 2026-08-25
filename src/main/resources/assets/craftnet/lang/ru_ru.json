@@ -34,6 +34,7 @@
   "craftnet.job.fined": "Штраф за сорванную смену: -%s CR",
   "craftnet.job.have_job": "Сначала завершите текущее задание.",
   "craftnet.job.missing_items": "Не хватает предметов для сдачи заказа.",
+  "craftnet.job.no_active": "Нет активного задания.",
   "craftnet.job.no_cargo": "У вас нет груза для сдачи.",
   "craftnet.job.no_offer": "Задание недоступно (нет жителей поблизости?).",
   "craftnet.job.paid": "Работа оплачена: +%s CR (%s).",

@@ -89,14 +89,21 @@ public class PvzScreen extends CraftNetScreen {
 		UiKit.card(ctx, x, y, PW - 16, 32, UiKit.COL_PANEL_HI);
 		var pays = rows(data, "payouts");
 		long sum = lng(data, "payoutSum");
-		String head = "Ожидаемые выплаты" + (pays.isEmpty() ? "" : " · всего " + sum + " CR");
-		UiKit.label(ctx, textRenderer, x + 6, y + 3, head,
-				pays.isEmpty() ? UiKit.COL_TEXT_DIM : UiKit.COL_YELLOW);
 		if (pays.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 6, y + 3, "Ожидаемые выплаты", UiKit.COL_TEXT_DIM);
 			UiKit.label(ctx, textRenderer, x + 6, y + 14, "нет — продай что-нибудь, деньги придут сюда",
 					UiKit.COL_TEXT_DIM);
 			UiKit.label(ctx, textRenderer, x + 6, y + 23, "(обычно 2–6 минут — зависит от сети деревни)", UiKit.COL_TEXT_DIM);
 			return;
+		}
+		// L8: «и ещё N» — правым краем; заголовок обрезаем, чтобы не налезал
+		String more = pays.size() > 2 ? "и ещё " + (pays.size() - 2) : null;
+		int moreW = more == null ? 0 : textRenderer.getWidth(more) + 8;
+		String head = fit("Ожидаемые выплаты · всего " + sum + " CR", PW - 16 - 12 - moreW);
+		UiKit.label(ctx, textRenderer, x + 6, y + 3, head, UiKit.COL_YELLOW);
+		if (more != null) {
+			ctx.drawText(textRenderer, Text.literal(more),
+					x + PW - 16 - 6 - textRenderer.getWidth(more), y + 3, UiKit.COL_TEXT_DIM, false);
 		}
 		int ry = y + 13;
 		int shown = 0;
@@ -110,10 +117,16 @@ public class PvzScreen extends CraftNetScreen {
 			ry += 10;
 			shown++;
 		}
-		if (pays.size() > shown) {
-			UiKit.label(ctx, textRenderer, x + PW - 58, y + 3, "и ещё " + (pays.size() - shown),
-					UiKit.COL_TEXT_DIM);
+	}
+
+	/** Обрезать строку под ширину в пикселях (с «…»). */
+	private String fit(String s, int maxW) {
+		if (textRenderer.getWidth(s) <= maxW) return s;
+		String t = s;
+		while (t.length() > 1 && textRenderer.getWidth(t.trim() + "…") > maxW) {
+			t = t.substring(0, t.length() - 1);
 		}
+		return t.trim() + "…";
 	}
 
 	// ------------------------------ посылки ------------------------------
@@ -250,8 +263,13 @@ public class PvzScreen extends CraftNetScreen {
 	private void renderLoader(DrawContext ctx, int x, int y, double mx, double my) {
 		UiKit.card(ctx, x, y, PW - 16, 28, UiKit.COL_PANEL_HI);
 		if (i(data, "hasJob") == 1) {
-			UiKit.label(ctx, textRenderer, x + 8, y + 9,
-					"У вас активное задание — /craftnet job cancel для отмены", UiKit.COL_YELLOW);
+			UiKit.label(ctx, textRenderer, x + 8, y + 4, "Активное задание: " + jobTitle(str(data, "jobType")),
+					UiKit.COL_YELLOW);
+			UiKit.label(ctx, textRenderer, x + 8, y + 15, "завершите его или отмените (штраф)",
+					UiKit.COL_TEXT_DIM);
+			// M2: отмена смены прямо с ПВЗ (иначе грузчик «застревал» на 10 минут)
+			UiKit.button(ctx, textRenderer, x + PW - 92, y + 6, 60, 16, "Отменить", mx, my, true);
+			clickable(x + PW - 92, y + 6, 60, 16, () -> send("job_cancel", new NbtCompound()));
 			return;
 		}
 		NbtCompound offer = sub(data, "loaderOffer");
@@ -267,7 +285,22 @@ public class PvzScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 8, y + 15, "оплата " + lng(offer, "pay") + " CR",
 				UiKit.COL_GREEN);
 		UiKit.button(ctx, textRenderer, x + PW - 92, y + 6, 60, 16, "Принять", mx, my, true);
-		clickable(x + PW - 92, y + 6, 60, 16, () -> send("loader_start", new NbtCompound()));
+		clickable(x + PW - 92, y + 6, 60, 16, () -> {
+			NbtCompound a = new NbtCompound();
+			a.putLong("win", lng(offer, "win")); // M7: принять ровно показанный слепок
+			send("loader_start", a);
+		});
+	}
+
+	private static String jobTitle(String type) {
+		return switch (type) {
+			case "factory" -> "сборщик деталей";
+			case "factory_order" -> "цеховой заказ";
+			case "cook" -> "повар";
+			case "loader" -> "грузчик";
+			case "courier" -> "курьер";
+			default -> "работа";
+		};
 	}
 
 	private static String trim(String s, int max) {

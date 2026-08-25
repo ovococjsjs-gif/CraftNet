@@ -99,9 +99,23 @@ public final class AdminCommands {
 							return 1;
 						})))
 
-				.then(CommandManager.literal("job").requires(s -> s.getPermissions().hasPermission(OP))
+				// /craftnet job cancel — себе: без OP (M2); другому игроку: требует OP
+				.then(CommandManager.literal("job")
 						.then(CommandManager.literal("cancel")
+								.executes(ctx -> {
+									ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
+									if (!JobManager.hasJob(ctx.getSource().getServer(), p.getUuid())) {
+										ctx.getSource().sendFeedback(
+												() -> Text.translatable("craftnet.job.no_active"), false);
+										return 0;
+									}
+									JobManager.cancel(ctx.getSource().getServer(), p.getUuid(), false);
+									ctx.getSource().sendFeedback(
+											() -> Text.translatable("craftnet.job.cancelled"), false);
+									return 1;
+								})
 								.then(CommandManager.argument("player", EntityArgumentType.player())
+										.requires(s -> s.getPermissions().hasPermission(OP))
 										.executes(ctx -> {
 											ServerPlayerEntity t = EntityArgumentType.getPlayer(ctx, "player");
 											JobManager.cancel(ctx.getSource().getServer(), t.getUuid(), false);
