@@ -110,6 +110,7 @@ public final class ServerActions {
 						case "phone" -> handlePhone(player, action, args);
 						case "pvz" -> handlePvz(player, action, args);
 						case "bank" -> handleBank(player, action, args);
+						case "tower" -> handleTower(player, action, args);
 						case "job:factory" -> handleJob(player, "factory", action, args);
 						case "job:cafe" -> handleJob(player, "cafe", action, args);
 						default -> net.craftnet.CraftNet.LOGGER.debug("[CraftNet] Неизвестный экран: {}", screen);
@@ -224,31 +225,24 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
 			return;
 		}
-		var near = VillageManager.nearest(server, player.getBlockPos(), true);
-		if (near.isEmpty()) {
-			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
-			return;
-		}
-		long price = (long) PriceManager.buyPrice(id) * count;
+		// «умная вышка» ур.4: −5% всем покрытым абонентам
+		long price = Math.round(PriceManager.buyPrice(id) * count * VillageManager.shopPriceFactor(sig));
 		if (!MoneyManager.tryCharge(server, player.getUuid(), price, "магазин")) {
 			player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
 			return;
 		}
-		NbtCompound v = near.get();
-		int dist = (int) Math.round(Math.sqrt(player.getBlockPos().getSquaredDistance(new BlockPos(
-				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
-				net.craftnet.util.Nbt2.i(v, "cz")))));
+		// обслуживающая деревня — точка доставки; логистика ур.3-4 ускоряет путь
+		int dist = sig.distance();
 		long ready = server.getOverworld().getTime()
-				+ (long) OrderManager.BASE_TRAVEL_TICKS * sig.level().travelMultiplier()
+				+ (long) OrderManager.BASE_TRAVEL_TICKS * VillageManager.travelMultiplier(sig)
 				+ dist;
 		ItemStack stack = new ItemStack(item, count);
 		OrderManager.newDelivery(server, player.getUuid(), stack,
-				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
-				net.craftnet.util.Nbt2.i(v, "cz"), net.craftnet.util.Nbt2.str(v, "name"), ready);
+				sig.vx(), sig.vy(), sig.vz(), sig.villageName(), ready);
 		StatsManager.bump(server, player.getUuid(), StatsManager.ORDERS_BOUGHT, 1);
 		StatsManager.addXp(server, player.getUuid(), 3);
 		player.sendMessage(Text.translatable("craftnet.shop.ordered",
-				count, stack.getName().getString(), net.craftnet.util.Nbt2.str(v, "name"),
+				count, stack.getName().getString(), sig.villageName(),
 				Math.max(1, (ready - server.getOverworld().getTime()) / 20)), false);
 	}
 
@@ -262,23 +256,14 @@ public final class ServerActions {
 			player.sendMessage(Text.translatable("craftnet.need_signal"), false);
 			return;
 		}
-		var near = VillageManager.nearest(server, player.getBlockPos(), true);
-		if (near.isEmpty()) {
-			player.sendMessage(Text.translatable("craftnet.shop.no_village"), false);
-			return;
-		}
-		NbtCompound v = near.get();
-		int dist = (int) Math.round(Math.sqrt(player.getBlockPos().getSquaredDistance(new BlockPos(
-				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
-				net.craftnet.util.Nbt2.i(v, "cz")))));
+		int dist = sig.distance();
 		long ready = server.getOverworld().getTime()
-				+ (long) OrderManager.BASE_TRAVEL_TICKS * sig.level().travelMultiplier() + dist;
+				+ (long) OrderManager.BASE_TRAVEL_TICKS * VillageManager.travelMultiplier(sig) + dist;
 		int code = MarketManager.buy(server, player, lid,
-				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
-				net.craftnet.util.Nbt2.i(v, "cz"), net.craftnet.util.Nbt2.str(v, "name"), ready);
+				sig.vx(), sig.vy(), sig.vz(), sig.villageName(), ready);
 		switch (code) {
 			case MarketManager.BUY_OK -> player.sendMessage(Text.translatable("craftnet.market.bought",
-					net.craftnet.util.Nbt2.str(v, "name")), false);
+					sig.villageName()), false);
 			case MarketManager.BUY_GONE -> player.sendMessage(Text.translatable("craftnet.market.gone"), false);
 			case MarketManager.BUY_OWN -> player.sendMessage(Text.translatable("craftnet.market.own"), false);
 			default -> player.sendMessage(Text.translatable("craftnet.bank.no_money"), false);
@@ -290,7 +275,8 @@ public final class ServerActions {
 		if (server == null) return;
 		String id = args.getString("id", "");
 		int n = args.getInt("n", 1);
-		if (VillageManager.signalFor(player).level().tier < SignalLevel.G3.tier) {
+		// торговля: 3G+, либо 2G в покрытии «умной вышки» ур.4
+		if (!VillageManager.stocksAllowed(VillageManager.signalFor(player))) {
 			player.sendMessage(Text.translatable("craftnet.stocks.need_3g"), false);
 			return;
 		}
@@ -343,7 +329,7 @@ public final class ServerActions {
 				JobManager.removeFromInventory(player, item, count);
 				long value = (long) PriceManager.sellPrice(id) * count;
 				VillageManager.SignalInfo sig = VillageManager.signalFor(player);
-				int mult = sig.level().travelMultiplier();
+				int mult = VillageManager.travelMultiplier(sig);
 				if (mult <= 0) mult = 3;
 				long ready = server.getOverworld().getTime() + (long) OrderManager.BASE_TRAVEL_TICKS * mult;
 				String name = new ItemStack(item).getName().getString();
@@ -440,6 +426,18 @@ public final class ServerActions {
 		}
 	}
 
+	// ============================== вышка ==============================
+
+	private static void handleTower(ServerPlayerEntity player, String action, NbtCompound args) {
+		if (!"upgrade".equals(action)) return;
+		OpenCtx ctx = OPEN.get(player.getUuid());
+		if (ctx == null || ctx.station() == 0L) return;
+		BlockPos pos = BlockPos.fromLong(ctx.station());
+		// анти-чит: апгрейд только «в упор» — экран открывается ПКМ по ядру
+		if (pos.getSquaredDistance(player.getBlockPos()) > 16 * 16) return;
+		VillageManager.upgradeTower(player, pos);
+	}
+
 	// ============================== работы ==============================
 
 	private static void handleJob(ServerPlayerEntity player, String type, String action, NbtCompound args) {
@@ -479,6 +477,7 @@ public final class ServerActions {
 			d.putString("village", sig.villageName());
 			d.putInt("dist", sig.distance());
 			d.putInt("off", sig.offlineVillage() ? 1 : 0);
+			d.putInt("tlv", sig.towerLevel());
 			int y = p.getBlockPos().getY();
 			boolean sky = p.getEntityWorld().isSkyVisible(p.getBlockPos());
 			d.putInt("gps", (y >= 55 || sky) ? 1 : 0);
@@ -503,6 +502,7 @@ public final class ServerActions {
 			case "phone" -> fillPhoneSync(player, server, d);
 			case "pvz" -> fillPvzSync(player, server, d);
 			case "bank" -> fillBankSync(player, server, d);
+			case "tower" -> fillTowerSync(player, server, d);
 			case "job:factory" -> fillJobSync(player, server, d, "factory");
 			case "job:cafe" -> fillJobSync(player, server, d, "cafe");
 			default -> {
@@ -511,12 +511,24 @@ public final class ServerActions {
 		return d;
 	}
 
+	private static void fillTowerSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d) {
+		OpenCtx ctx = OPEN.get(player.getUuid());
+		BlockPos pos = ctx != null && ctx.station() != 0L
+				? BlockPos.fromLong(ctx.station()) : player.getBlockPos();
+		d.put("tower", VillageManager.towerView(player, pos));
+	}
+
 	private static void fillPhoneSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d) {
 		VillageManager.SignalInfo sig = VillageManager.signalFor(player);
 		d.putInt("signal", sig.level().tier);
 		d.putString("village", sig.villageName());
 		d.putInt("dist", sig.distance());
 		d.putInt("offVillage", sig.offlineVillage() ? 1 : 0);
+		d.putInt("tlv", sig.towerLevel());
+		// скидка «умной вышки» для отображения в магазине (сервер считает точно так же)
+		d.putInt("shopDisc", sig.towerLevel() >= VillageManager.LVL_MAX
+				&& sig.level().tier >= SignalLevel.G2.tier
+				? (int) Math.round(VillageManager.SMART_TOWER_DISCOUNT * 100) : 0);
 
 		// GPS: под землёй без прямого неба спутники не ловят
 		int y = player.getBlockPos().getY();
@@ -554,6 +566,8 @@ public final class ServerActions {
 		// казино-апгрейдер: пул ставки, источник из инвентаря, каталог целей, последний спин
 		d.put("casino", buildCasinoSync(player, server,
 				ctx == null ? "" : ctx.casinoQ(), ctx == null ? 0 : ctx.casinoPage()));
+		// профиль: статистика, опыт, достижения
+		d.put("profile", StatsManager.profileView(server, player));
 	}
 
 	private record ShopEntry(String id, String name, int buy, int sell, int max) {}

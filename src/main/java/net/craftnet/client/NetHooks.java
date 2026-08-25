@@ -34,6 +34,7 @@ public final class NetHooks {
 			case "phone" -> new PhoneScreen(data);
 			case "pvz" -> new PvzScreen(data);
 			case "bank" -> new BankScreen(data);
+			case "tower" -> new TowerScreen(data);
 			case "job:factory" -> new JobScreen("job:factory", data);
 			case "job:cafe" -> new JobScreen("job:cafe", data);
 			default -> null;
