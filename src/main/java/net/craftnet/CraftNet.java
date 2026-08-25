@@ -48,6 +48,7 @@ public class CraftNet implements ModInitializer {
 	public void onInitialize() {
 		LOGGER.info("[CraftNet] Инициализация...");
 		net.craftnet.config.CraftNetConfig.load(); // config/craftnet.json — все настройки экономики
+		net.craftnet.econ.CraftNetPrices.load();   // config/craftnet_prices.json — прайс (переопределения)
 
 		ModComponents.register();
 		ModItems.register();

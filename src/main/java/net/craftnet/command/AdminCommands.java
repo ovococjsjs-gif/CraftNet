@@ -123,6 +123,15 @@ public final class AdminCommands {
 											return 1;
 										}))))
 
+				.then(CommandManager.literal("reload").requires(s -> s.getPermissions().hasPermission(OP))
+						.executes(ctx -> {
+							net.craftnet.config.CraftNetConfig.load();
+							net.craftnet.econ.CraftNetPrices.load();
+							ctx.getSource().sendFeedback(() -> Text.literal(
+									"Конфиги перечитаны: craftnet.json, craftnet_prices.json"), false);
+							return 1;
+						}))
+
 				.then(CommandManager.literal("stocktick").requires(s -> s.getPermissions().hasPermission(OP))
 						.executes(ctx -> {
 							net.craftnet.econ.StocksManager.tick(ctx.getSource().getServer());

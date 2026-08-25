@@ -395,7 +395,9 @@ public final class ServerActions {
 				String id = args.getString("id", "");
 				int count = args.getInt("count", 1);
 				Item item = Registries.ITEM.get(Identifier.tryParse(id));
-				if (item == null || count <= 0 || !PriceManager.tradeable(id)) return;
+				// sellPrice 0 = предмет не принимается (хлам нижней ступени) — и выплата
+				// не создаётся, и в дельту баланса не попадает
+				if (item == null || count <= 0 || PriceManager.sellPrice(id) <= 0) return;
 				// H1: рабочее имущество (◆ материалы цеха/кафе, грузы) продаже не подлежит
 				count = Math.min(count, JobManager.countSellable(player, item));
 				if (count <= 0) return;

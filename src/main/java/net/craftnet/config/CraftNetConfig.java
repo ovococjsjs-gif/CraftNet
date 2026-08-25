@@ -53,6 +53,14 @@ public final class CraftNetConfig {
 	/** Минимальный баланс для процента, CR. */
 	public long bankInterestMinBalance = 50;
 
+	// ---- продажа игрок → сервер (ступенчатая кривая от цены покупки) ----
+	/** Коэффициент продажи дешёвых товаров (buy ≤ 9 CR): антифарм хлама. */
+	public double sellRatioCheap = 0.55;
+	/** Коэффициент продажи средних товаров (buy 10..499 CR). */
+	public double sellRatioMid = 0.68;
+	/** Коэффициент продажи дорогих товаров (buy ≥ 500 CR): эндгейм-лут. */
+	public double sellRatioExpensive = 0.80;
+
 	// ---- казино-апгрейдер ----
 	/** Максимум предметов одного вида в ставке. */
 	public int casinoMaxStakeUnits = 64;
@@ -128,6 +136,15 @@ public final class CraftNetConfig {
 		if (casinoMaxChanceBp < casinoMinChanceBp) casinoMaxChanceBp = 9500;
 		if (shopSmartTowerDiscountPct < 0) shopSmartTowerDiscountPct = 0;
 		if (shopSmartTowerDiscountPct > 50) shopSmartTowerDiscountPct = 50;
+		if (sellRatioCheap < 0.05 || sellRatioCheap > 0.95) sellRatioCheap = 0.55;
+		if (sellRatioMid < 0.05 || sellRatioMid > 0.95) sellRatioMid = 0.68;
+		if (sellRatioExpensive < 0.05 || sellRatioExpensive > 0.95) sellRatioExpensive = 0.80;
+		// кривая обязана быть неубывающей — иначе сбрасываем на дефолты
+		if (!(sellRatioCheap <= sellRatioMid && sellRatioMid <= sellRatioExpensive)) {
+			sellRatioCheap = 0.55;
+			sellRatioMid = 0.68;
+			sellRatioExpensive = 0.80;
+		}
 		if (screenSyncTicks < 4) screenSyncTicks = 4;
 		if (screenSyncTicks > 100) screenSyncTicks = 100;
 	}
