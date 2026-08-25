@@ -274,13 +274,42 @@ public class PvzScreen extends CraftNetScreen {
 	protected boolean onScroll(double mx, double my, double dir) {
 		int step = dir < 0 ? 1 : -1;
 		if (mx < px() + PW / 2) {
-			int pages = pagesOf(rows(data, "claims").size());
-			claimsPage = Math.max(0, Math.min(pages - 1, claimsPage + step));
+			pageClaimsBy(step);
 		} else {
-			int pages = pagesOf(rows(data, "sell").size());
-			sellPage = Math.max(0, Math.min(pages - 1, sellPage + step));
+			pageSellBy(step);
 		}
 		return true;
+	}
+
+	/** PgUp/PgDn — посылки; с зажатым Shift — список продажи. */
+	@Override
+	protected boolean onPageKey(int step) {
+		if (shiftDown()) {
+			pageSellBy(step);
+		} else {
+			pageClaimsBy(step);
+		}
+		return true;
+	}
+
+	private void pageClaimsBy(int step) {
+		int pages = pagesOf(rows(data, "claims").size());
+		claimsPage = Math.max(0, Math.min(pages - 1, claimsPage + step));
+	}
+
+	private void pageSellBy(int step) {
+		int pages = pagesOf(rows(data, "sell").size());
+		sellPage = Math.max(0, Math.min(pages - 1, sellPage + step));
+	}
+
+	/** Нажат ли Shift (левый/правый) — модификатор PgUp/PgDn. */
+	private static boolean shiftDown() {
+		var mc = net.minecraft.client.MinecraftClient.getInstance();
+		if (mc == null || mc.getWindow() == null) return false;
+		return net.minecraft.client.util.InputUtil.isKeyPressed(mc.getWindow(),
+				net.minecraft.client.util.InputUtil.GLFW_KEY_LEFT_SHIFT)
+				|| net.minecraft.client.util.InputUtil.isKeyPressed(mc.getWindow(),
+						net.minecraft.client.util.InputUtil.GLFW_KEY_RIGHT_SHIFT);
 	}
 
 	private void sellAction(String id, int n) {

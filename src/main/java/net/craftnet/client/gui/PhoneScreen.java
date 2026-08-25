@@ -284,8 +284,8 @@ public class PhoneScreen extends CraftNetScreen {
 					? "Выплат: +" + UiKit.fmt(lng(inb, "paySum")) + " CR"
 							+ (lng(inb, "payEta") >= 0 ? " · " + mmss(lng(inb, "payEta")) : "")
 					: "";
-			UiKit.label(ctx, textRenderer, x + 22, y + 154, trim(
-					p1 + (parcels > 0 && payN > 0 ? "  |  " : "") + p2, 44),
+			UiKit.label(ctx, textRenderer, x + 22, y + 154, UiKit.fit(textRenderer,
+					p1 + (parcels > 0 && payN > 0 ? "  |  " : "") + p2, PW - 44),
 					parcels > 0 ? UiKit.COL_ACCENT : UiKit.COL_GREEN);
 		}
 		// карточка сети (компактная, в строку под сеткой 3×3)
