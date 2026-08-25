@@ -24,11 +24,16 @@ public final class JobTag {
 
     /** Количество «нетронутых» (не ◆) предметов того же вида в инвентаре игрока. */
     public static int countUntagged(ServerPlayerEntity player, ItemStack reference) {
-        return JobManager.countSellable(player, reference);
+        if (reference == null || reference.isEmpty()) return 0;
+        return JobManager.countSellable(player, reference.getItem());
     }
 
-    /** Списывает до {@code want} предметов, пропуская ◆-стаки. Возвращает сколько реально списано. */
+    /**
+     * Списывает {@code want} предметов, пропуская ◆-стаки (all-or-nothing).
+     * Возвращает сколько реально списано (0 или {@code want}).
+     */
     public static int removeUntagged(ServerPlayerEntity player, ItemStack reference, int want) {
-        return JobManager.removeSellable(player, reference, want);
+        if (want <= 0 || reference == null || reference.isEmpty()) return 0;
+        return JobManager.removeSellable(player, reference.getItem(), want) ? want : 0;
     }
 }
