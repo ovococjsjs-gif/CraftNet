@@ -30,7 +30,7 @@ public final class OrderManager {
 	public static final int KIND_DELIVERY = 0;
 	public static final int KIND_PAYOUT = 1;
 
-	public static final int BASE_TRAVEL_TICKS = 3600; // 3 игровых минуты
+	public static final int BASE_TRAVEL_TICKS = 2400; // 2 минуты при 4G (3G ×2, 2G ×3)
 
 	public static OrdersState state(MinecraftServer server) {
 		return server.getOverworld().getPersistentStateManager().getOrCreate(OrdersState.TYPE);
@@ -88,6 +88,7 @@ public final class OrderManager {
 		o.putLong("payout", amount);
 		o.putString("comment", comment);
 		o.putLong("ready", readyTick);
+		o.putLong("start", server.getOverworld().getTime());
 		NbtList list = st.data().getListOrEmpty("orders");
 		list = (NbtList) list.copy();
 		list.add(o);
@@ -179,6 +180,30 @@ public final class OrderManager {
 			view.putLong("etaSec", Math.max(0, (ready - now) / 20));
 			long start = o.getLong("start", 0L);
 			int frac = start <= 0 || ready <= start ? (ready <= now ? 100 : 0)
+					: (int) Math.max(0, Math.min(100, (now - start) * 100 / (ready - start)));
+			view.putInt("frac", frac);
+			out.add(view);
+		}
+		return out;
+	}
+
+	/** Входящие выплаты игрока (для полосы «ожидаемые выплаты» в ПВЗ). */
+	public static List<NbtCompound> payoutsOf(MinecraftServer server, UUID owner, long now) {
+		List<NbtCompound> out = new ArrayList<>();
+		NbtList list = state(server).data().getListOrEmpty("orders");
+		for (int i = 0; i < list.size(); i++) {
+			final int idx = i;
+			NbtElement el = list.get(idx);
+			if (!(el instanceof NbtCompound o)) continue;
+			if (o.getInt("kind", 0) != KIND_PAYOUT) continue;
+			if (!o.getString("owner", "").equals(owner.toString())) continue;
+			NbtCompound view = new NbtCompound();
+			view.putLong("payout", o.getLong("payout", 0L));
+			view.putString("comment", o.getString("comment", ""));
+			long ready = o.getLong("ready", 0L);
+			view.putLong("etaSec", Math.max(0, (ready - now) / 20));
+			long start = o.getLong("start", 0L);
+			int frac = start <= 0 || ready <= start ? 0
 					: (int) Math.max(0, Math.min(100, (now - start) * 100 / (ready - start)));
 			view.putInt("frac", frac);
 			out.add(view);

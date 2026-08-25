@@ -331,12 +331,14 @@ public final class ServerActions {
 				VillageManager.SignalInfo sig = VillageManager.signalFor(player);
 				int mult = VillageManager.travelMultiplier(sig);
 				if (mult <= 0) mult = 3;
-				long ready = server.getOverworld().getTime() + (long) OrderManager.BASE_TRAVEL_TICKS * mult;
-				String name = new ItemStack(item).getName().getString();
-				OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + count, ready);
-				StatsManager.bump(server, player.getUuid(), StatsManager.ITEMS_SOLD, count);
-				StatsManager.addXp(server, player.getUuid(), Math.max(1, Math.min(10, value / 100)));
-				player.sendMessage(Text.translatable("craftnet.pvz.sold", count, name, value), false);
+			long now0 = server.getOverworld().getTime();
+			long ready = now0 + (long) OrderManager.BASE_TRAVEL_TICKS * mult;
+			String name = new ItemStack(item).getName().getString();
+			OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + count, ready);
+			StatsManager.bump(server, player.getUuid(), StatsManager.ITEMS_SOLD, count);
+			StatsManager.addXp(server, player.getUuid(), Math.max(1, Math.min(10, value / 100)));
+			long etaSec = (ready - now0) / 20;
+			player.sendMessage(Text.translatable("craftnet.pvz.sold", count, name, value, etaSec), false);
 			}
 			case "market_list" -> {
 				String id = args.getString("id", "");
@@ -717,6 +719,16 @@ public final class ServerActions {
 		NbtList claims = new NbtList();
 		for (NbtCompound o : OrderManager.deliveriesOf(server, player.getUuid(), now)) claims.add(o);
 		d.put("claims", claims);
+
+		// входящие выплаты за проданное (с ETA и прогрессом)
+		NbtList pays = new NbtList();
+		long sum = 0;
+		for (NbtCompound p : OrderManager.payoutsOf(server, player.getUuid(), now)) {
+			pays.add(p);
+			sum += p.getLong("payout", 0L);
+		}
+		d.put("payouts", pays);
+		d.putLong("payoutSum", sum);
 
 		// продажа: агрегация инвентаря по предмету
 		Map<String, int[]> agg = new java.util.LinkedHashMap<>();

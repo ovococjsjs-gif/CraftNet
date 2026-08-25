@@ -8,16 +8,19 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 /**
- * Экран пункта выдачи заказов 2.0: посылки с прогрессом доставки и прокруткой,
- * продажа по страницам, приём на работу грузчиком. Макет без наложений:
- * заголовок (18) → две колонки (126) → полоса работы (30).
+ * Экран пункта выдачи заказов 2.1: посылки с прогрессом доставки и прокруткой,
+ * продажа по страницам, полоса ОЖИДАЕМЫХ ВЫПЛАТ (видно, когда придут деньги),
+ * приём на работу грузчиком. Макет без наложений:
+ * заголовок (22) → две колонки (116) → выплаты (32) → полоса работы (28).
  */
 public class PvzScreen extends CraftNetScreen {
 
 	private static final int PW = 300;
-	private static final int PH = 200;
-	private static final int COLS_TOP = 24;
-	private static final int COLS_H = 126;
+	private static final int PH = 212;
+	private static final int COLS_TOP = 22;
+	private static final int COLS_H = 116;
+	/** Верх полосы ожидаемых выплат (относительно карточки). */
+	private static final int STRIP_TOP = COLS_TOP + COLS_H + 4;
 	private static final int ROW_STEP = 28;
 	private static final int ROWS = 3;
 
@@ -76,7 +79,41 @@ public class PvzScreen extends CraftNetScreen {
 
 		renderClaims(ctx, x + 8, y + COLS_TOP, mx, my);
 		renderSell(ctx, x + PW / 2 + 2, y + COLS_TOP, mx, my);
+		renderPayouts(ctx, x + 8, y + STRIP_TOP);
 		renderLoader(ctx, x + 8, y + PH - 34, mx, my);
+	}
+
+	// ------------------------------ ожидаемые выплаты ------------------------------
+
+	private void renderPayouts(DrawContext ctx, int x, int y) {
+		UiKit.card(ctx, x, y, PW - 16, 32, UiKit.COL_PANEL_HI);
+		var pays = rows(data, "payouts");
+		long sum = lng(data, "payoutSum");
+		String head = "Ожидаемые выплаты" + (pays.isEmpty() ? "" : " · всего " + sum + " CR");
+		UiKit.label(ctx, textRenderer, x + 6, y + 3, head,
+				pays.isEmpty() ? UiKit.COL_TEXT_DIM : UiKit.COL_YELLOW);
+		if (pays.isEmpty()) {
+			UiKit.label(ctx, textRenderer, x + 6, y + 14, "нет — продай что-нибудь, деньги придут сюда",
+					UiKit.COL_TEXT_DIM);
+			UiKit.label(ctx, textRenderer, x + 6, y + 23, "(обычно 2–6 минут — зависит от сети деревни)", UiKit.COL_TEXT_DIM);
+			return;
+		}
+		int ry = y + 13;
+		int shown = 0;
+		for (NbtCompound p : pays) {
+			if (shown >= 2) break;
+			long eta = lng(p, "etaSec");
+			String line = trim(str(p, "comment"), 16) + " → +" + lng(p, "payout") + " CR · "
+					+ String.format("%d:%02d", eta / 60, eta % 60);
+			UiKit.label(ctx, textRenderer, x + 6, ry, line, UiKit.COL_TEXT);
+			UiKit.progress(ctx, x + 6, ry + 8, PW - 28 - 60, 2, i(p, "frac"), UiKit.COL_GREEN);
+			ry += 10;
+			shown++;
+		}
+		if (pays.size() > shown) {
+			UiKit.label(ctx, textRenderer, x + PW - 58, y + 3, "и ещё " + (pays.size() - shown),
+					UiKit.COL_TEXT_DIM);
+		}
 	}
 
 	// ------------------------------ посылки ------------------------------
@@ -145,7 +182,7 @@ public class PvzScreen extends CraftNetScreen {
 		int w = PW / 2 - 12;
 		UiKit.card(ctx, x, y, w, COLS_H, UiKit.COL_PANEL_HI);
 		UiKit.label(ctx, textRenderer, x + 6, y + 5, "Продать из инвентаря", UiKit.COL_ACCENT);
-		UiKit.label(ctx, textRenderer, x + 6, y + 14, "выплата с задержкой", UiKit.COL_TEXT_DIM);
+		UiKit.label(ctx, textRenderer, x + 6, y + 14, "деньги — в ленте ниже ↓", UiKit.COL_TEXT_DIM);
 		var sell = rows(data, "sell");
 		if (sell.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 8, y + 40, "Нечего продавать —", UiKit.COL_TEXT_DIM);
