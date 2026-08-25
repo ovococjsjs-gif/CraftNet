@@ -28,6 +28,7 @@
   "craftnet.job.accepted": "Job accepted! Deadline is on the job card.",
   "craftnet.job.cafe_title": "Cafe",
   "craftnet.job.cancelled": "Job cancelled.",
+  "craftnet.job.cooldown": "This shift is already done for the current window — come back after the rotation.",
   "craftnet.job.deliver_phase": "Done! Deliver food to %s glowing villagers",
   "craftnet.job.expired": "Job expired and was cancelled.",
   "craftnet.job.factory_title": "Factory",

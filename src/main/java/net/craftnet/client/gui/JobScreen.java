@@ -234,7 +234,9 @@ public class JobScreen extends CraftNetScreen {
 			}
 			UiKit.label(ctx, textRenderer, x + 10, ly, "сдать: " + trim(sb.toString(), 42), UiKit.COL_TEXT);
 			ly += 11;
-			UiKit.label(ctx, textRenderer, x + 10, ly, "материалы выдаст склад (◆ помечены)", UiKit.COL_TEXT_DIM);
+			long matsValue = lng(offer, "matsValue");
+			UiKit.label(ctx, textRenderer, x + 10, ly, "материалы выдаст склад ◆"
+					+ (matsValue > 0 ? " (≈" + matsValue + " CR)" : ""), UiKit.COL_TEXT_DIM);
 			ly += 11;
 		}
 		if (i(offer, "partsNeed") > 0) {
@@ -262,7 +264,14 @@ public class JobScreen extends CraftNetScreen {
 					"новый состав через " + (winLeft / 60) + ":" + String.format("%02d", winLeft % 60),
 					UiKit.COL_TEXT_DIM);
 		}
-		UiKit.label(ctx, textRenderer, x + 10, y + h - 24, "награда: " + lng(offer, "pay") + " CR", UiKit.COL_GREEN);
+		UiKit.label(ctx, textRenderer, x + 10, y + h - 24, "награда: " + lng(offer, "pay") + " CR",
+				UiKit.COL_GREEN);
+		if (i(offer, "cool") == 1) {
+			// тип уже отработан в этом окне — кнопка заменена подсказкой
+			UiKit.label(ctx, textRenderer, x + w - 162, y + h - 22,
+					UiKit.fit(textRenderer, "отработано · жди нового окна", 152), UiKit.COL_TEXT_DIM);
+			return;
+		}
 		UiKit.button(ctx, textRenderer, x + w - 86, y + h - 27, 76, 17, "Принять", mx, my, true);
 		clickable(x + w - 86, y + h - 27, 76, 17, () -> {
 			NbtCompound a = new NbtCompound();

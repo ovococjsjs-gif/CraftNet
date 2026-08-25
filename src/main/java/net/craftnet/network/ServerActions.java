@@ -456,7 +456,9 @@ public final class ServerActions {
 					player.sendMessage(Text.translatable("craftnet.job.have_job"), false);
 					return;
 				}
-				if (!JobManager.accept(player, JobManager.T_LOADER, args.getLong("win", -1L))) {
+				if (!JobManager.accept(player, JobManager.T_LOADER, args.getLong("win", -1L))
+						&& !JobManager.onWindowCooldown(server, player.getUuid(), JobManager.T_LOADER)) {
+					// при кулдауне accept() уже отправил внятное сообщение
 					player.sendMessage(Text.translatable("craftnet.job.no_offer"), false);
 				}
 			}
@@ -554,7 +556,9 @@ public final class ServerActions {
 				String real = args.getString("type", type);
 				// оффер детерминированно пересоздаётся в accept → подделка невозможна;
 				// win — окно показанного слепка (M7), принимаем текущее/предыдущее
-				if (!JobManager.accept(player, real, args.getLong("win", -1L))) {
+				if (!JobManager.accept(player, real, args.getLong("win", -1L))
+						&& !JobManager.onWindowCooldown(server, player.getUuid(), real)) {
+					// при кулдауне accept() уже отправил внятное сообщение
 					player.sendMessage(Text.translatable("craftnet.job.no_offer"), false);
 				}
 			}
@@ -908,7 +912,12 @@ public final class ServerActions {
 					JobManager.jobView(server, player.getUuid()), "type"));
 		} else {
 			NbtCompound offer = JobManager.buildOffer(player, JobManager.T_LOADER);
-			if (offer != null) d.put("loaderOffer", offer);
+			if (offer != null) {
+				if (JobManager.onWindowCooldown(server, player.getUuid(), JobManager.T_LOADER)) {
+					offer.putInt("cool", 1);
+				}
+				d.put("loaderOffer", offer);
+			}
 		}
 	}
 
@@ -931,15 +940,20 @@ public final class ServerActions {
 			return;
 		}
 		if ("factory".equals(group)) {
-			NbtCompound o = JobManager.buildOffer(player, JobManager.T_FACTORY);
-			if (o != null) d.put("offerFactory", o);
-			NbtCompound oo = JobManager.buildOffer(player, JobManager.T_FACTORY_ORDER);
-			if (oo != null) d.put("offerFactoryOrder", oo);
+			putOffer(player, server, d, "offerFactory", JobManager.T_FACTORY);
+			putOffer(player, server, d, "offerFactoryOrder", JobManager.T_FACTORY_ORDER);
 		} else {
-			NbtCompound oc = JobManager.buildOffer(player, JobManager.T_COOK);
-			if (oc != null) d.put("offerCook", oc);
-			NbtCompound od = JobManager.buildOffer(player, JobManager.T_COURIER);
-			if (od != null) d.put("offerCourier", od);
+			putOffer(player, server, d, "offerCook", JobManager.T_COOK);
+			putOffer(player, server, d, "offerCourier", JobManager.T_COURIER);
 		}
+	}
+
+	/** Оффер в синк; cool=1 — тип уже отработан в этом окне, клиент гасит кнопку. */
+	private static void putOffer(ServerPlayerEntity player, MinecraftServer server,
+			NbtCompound d, String key, String type) {
+		NbtCompound o = JobManager.buildOffer(player, type);
+		if (o == null) return;
+		if (JobManager.onWindowCooldown(server, player.getUuid(), type)) o.putInt("cool", 1);
+		d.put(key, o);
 	}
 }

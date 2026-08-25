@@ -346,6 +346,12 @@ public class PvzScreen extends CraftNetScreen {
 				"Грузчик: ящик → " + nm + " (±" + (int) lng(target, "dist") + " м)", UiKit.COL_TEXT);
 		UiKit.label(ctx, textRenderer, x + 8, y + 15, "оплата " + lng(offer, "pay") + " CR",
 				UiKit.COL_GREEN);
+		if (i(offer, "cool") == 1) {
+			// смена грузчика в этом окне уже отработана — кнопки нет
+			UiKit.label(ctx, textRenderer, x + 118, y + 15,
+					fit("отработано · жди окна", PW - 16 - 118), UiKit.COL_TEXT_DIM);
+			return;
+		}
 		UiKit.button(ctx, textRenderer, x + PW - 92, y + 6, 60, 16, "Принять", mx, my, true);
 		clickable(x + PW - 92, y + 6, 60, 16, () -> {
 			NbtCompound a = new NbtCompound();

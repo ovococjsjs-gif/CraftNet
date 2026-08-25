@@ -28,6 +28,7 @@
   "craftnet.job.accepted": "Задание принято! Срок — в карточке задания.",
   "craftnet.job.cafe_title": "Кафе",
   "craftnet.job.cancelled": "Задание отменено.",
+  "craftnet.job.cooldown": "Эта смена уже отработана в текущем окне — загляни после обновления состава.",
   "craftnet.job.deliver_phase": "Готово! Разнеси еду %s жителям — они подсвечены",
   "craftnet.job.expired": "Срок задания истёк — задание аннулировано.",
   "craftnet.job.factory_title": "Завод",

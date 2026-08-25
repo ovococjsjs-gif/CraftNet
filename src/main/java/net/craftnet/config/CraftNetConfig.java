@@ -39,11 +39,44 @@ public final class CraftNetConfig {
 	/** Потолок цены лота за штуку. */
 	public int marketPriceMax = 1_000_000;
 
-	// ---- работы ----
+	// ---- работы: неустойки ----
 	/** Неустойка за ОТМЕНУ смены, % от оплаты. */
 	public double jobCancelFeePct = 25.0;
 	/** Неустойка за ТАЙМАУТ смены, % от оплаты. */
 	public double jobTimeoutFeePct = 30.0;
+	/** Штраф за потерянный ящик грузчика (при отмене/таймауте), CR. */
+	public int jobCargoLossFee = 80;
+	/** Смену каждого типа можно отработать раз в N окон офферов (1 = одна на 10-мин окно; 0 = без лимита). */
+	public int jobWindowCooldown = 1;
+
+	// ---- работы: оплата (лестница: завод > грузчик > повар > курьер; окна не пересекаются) ----
+	/** Курьер: оплата = base + perPortion × пакеты. */
+	public int jobCourierBase = 10;
+	public int jobCourierPerPortion = 5;
+	/** Курьер: пакетов в заказе (мин/макс). */
+	public int jobCourierMinPortions = 3;
+	public int jobCourierMaxPortions = 8;
+	/** Грузчик: CR за блок пути; итог зажат в [minPay..maxPay]. */
+	public int jobLoaderPerBlock = 4;
+	public int jobLoaderMinPay = 150;
+	public int jobLoaderMaxPay = 190;
+	/** Завод (мини-игра): оплата = base + perPart × детали + джиттер 0..jitter. */
+	public int jobFactoryBase = 90;
+	public int jobFactoryPerPart = 35;
+	public int jobFactoryJitter = 20;
+	/** Завод (мини-игра): деталей в схеме (мин/макс). */
+	public int jobFactoryMinParts = 3;
+	public int jobFactoryMaxParts = 5;
+	/** Цеховой заказ: оплата = clamp(round(материалы × matsPct/100) + bonus, minPay..maxPay). */
+	public int jobOrderFactoryMatsPct = 170;
+	public int jobOrderFactoryBonus = 50;
+	public int jobOrderFactoryMinPay = 195;
+	public int jobOrderFactoryMaxPay = 285;
+	/** Повар: оплата по той же формуле (медианный заказ ≈ середина окна). */
+	public int jobOrderCookMatsPct = 125;
+	public int jobOrderCookBonus = 12;
+	public int jobOrderCookMinPay = 110;
+	public int jobOrderCookMaxPay = 145;
 
 	// ---- банк ----
 	/** Ежедневный процент на остаток, % (0.15 = 0.15%). */
@@ -135,6 +168,37 @@ public final class CraftNetConfig {
 		if (marketPriceMax < 100) marketPriceMax = 100;
 		if (jobCancelFeePct < 0) jobCancelFeePct = 0;
 		if (jobTimeoutFeePct < 0) jobTimeoutFeePct = 0;
+		if (jobCargoLossFee < 0) jobCargoLossFee = 0;
+		if (jobCargoLossFee > 10_000) jobCargoLossFee = 10_000;
+		if (jobWindowCooldown < 0) jobWindowCooldown = 0;
+		if (jobWindowCooldown > 10) jobWindowCooldown = 10;
+		if (jobCourierBase < 0) jobCourierBase = 0;
+		if (jobCourierPerPortion < 0) jobCourierPerPortion = 0;
+		if (jobCourierMinPortions < 1) jobCourierMinPortions = 1;
+		if (jobCourierMaxPortions > 64) jobCourierMaxPortions = 64;
+		if (jobCourierMaxPortions < jobCourierMinPortions) jobCourierMaxPortions = jobCourierMinPortions;
+		if (jobLoaderPerBlock < 0) jobLoaderPerBlock = 0;
+		if (jobLoaderPerBlock > 100) jobLoaderPerBlock = 100;
+		if (jobLoaderMinPay < 0) jobLoaderMinPay = 0;
+		if (jobLoaderMaxPay < jobLoaderMinPay) jobLoaderMaxPay = jobLoaderMinPay;
+		if (jobFactoryBase < 0) jobFactoryBase = 0;
+		if (jobFactoryPerPart < 0) jobFactoryPerPart = 0;
+		if (jobFactoryPerPart > 10_000) jobFactoryPerPart = 10_000;
+		if (jobFactoryJitter < 0) jobFactoryJitter = 0;
+		if (jobFactoryJitter > 10_000) jobFactoryJitter = 10_000;
+		if (jobFactoryMinParts < 1) jobFactoryMinParts = 1;
+		if (jobFactoryMaxParts > 16) jobFactoryMaxParts = 16;
+		if (jobFactoryMaxParts < jobFactoryMinParts) jobFactoryMaxParts = jobFactoryMinParts;
+		if (jobOrderFactoryMatsPct < 0) jobOrderFactoryMatsPct = 0;
+		if (jobOrderFactoryMatsPct > 1000) jobOrderFactoryMatsPct = 1000;
+		if (jobOrderFactoryBonus < 0) jobOrderFactoryBonus = 0;
+		if (jobOrderFactoryMinPay < 0) jobOrderFactoryMinPay = 0;
+		if (jobOrderFactoryMaxPay < jobOrderFactoryMinPay) jobOrderFactoryMaxPay = jobOrderFactoryMinPay;
+		if (jobOrderCookMatsPct < 0) jobOrderCookMatsPct = 0;
+		if (jobOrderCookMatsPct > 1000) jobOrderCookMatsPct = 1000;
+		if (jobOrderCookBonus < 0) jobOrderCookBonus = 0;
+		if (jobOrderCookMinPay < 0) jobOrderCookMinPay = 0;
+		if (jobOrderCookMaxPay < jobOrderCookMinPay) jobOrderCookMaxPay = jobOrderCookMinPay;
 		if (bankInterestPctPerDay < 0) bankInterestPctPerDay = 0;
 		if (bankInterestCap < 0) bankInterestCap = 0;
 		if (bankInterestMinBalance < 0) bankInterestMinBalance = 0;

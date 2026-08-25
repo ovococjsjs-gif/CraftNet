@@ -21,6 +21,7 @@ import net.minecraft.util.math.Box;
 
 import net.craftnet.block.ModBlocks;
 import net.craftnet.component.ModComponents;
+import net.craftnet.config.CraftNetConfig;
 import net.craftnet.econ.MoneyManager;
 import net.craftnet.econ.PriceManager;
 import net.craftnet.item.ModItems;
@@ -31,7 +32,14 @@ import net.craftnet.village.VillageManager;
 
 /**
  * Рабочие места 2.0. Лестница оплаты: завод > грузчик > повар > курьер
- * (диапазоны строго не пересекаются: 195-285 / 150-190 / 110-145 / 25-50).
+ * (окна строго не пересекаются: 195-285 / 150-190 / 110-145 / 25-50 —
+ * все цифры лестниц вынесены в {@code config/craftnet.json}, блок job*).
+ *
+ * Темп фиксируется ОКНОМ ОФФЕРОВ: каждый тип смены отрабатывается не чаще
+ * одного раза за {@code jobWindowCooldown} окон (дефолт 1 = одна смена типа
+ * на 10-минутное окно; завершение, отмена и таймаут — всё считается сменой).
+ * Именно этим экономика держит якорь «~1700 CR/ч активной игры» (ECONOMY.md):
+ * даже играя ВСЕ пять работ подряд, игрок получает ≤ ~800 CR за два окна.
  *
  * Завод: на выбор — мини-игра «сборка по схеме» ИЛИ цеховой заказ (крафт).
  * Кафе: повар = крафт-заказ блюд (складываем баристе), курьер = доставка
@@ -39,10 +47,13 @@ import net.craftnet.village.VillageManager;
  *
  * Крафт-заказ: сервер выдаёт ПОМЕЧЕННЫЕ (компонент job_tag + имя «◆»)
  * материалы ровно по рецептам; игрок крафтит на верстаке и сдаёт целевые
- * предметы кнопкой «Сдать заказ». Потерянные/проданные материалы при
- * отмене или таймауте конвертируются в штраф по их стоимости, плюс
- * неустойка за срыв смены. У грузчика/курьера груз тоже помечен —
- * срыв смены = конфискация груза + штраф 30% от оплаты.
+ * предметы кнопкой «Сдать заказ». Оплата = стоимость материалов ×
+ * {@code matsPct/100} + бонус, зажатая в окно лестницы — множители
+ * подобраны так, что медианный заказ платит середину окна (см.
+ * tools/simulate_jobs.py). Потерянные/проданные материалы при отмене
+ * или таймауте конвертируются в штраф по их стоимости, плюс неустойка
+ * за срыв смены. У грузчика/курьера груз тоже помечен — срыв смены =
+ * конфискация груза + штраф {@code jobTimeoutFeePct}% от оплаты.
  */
 public final class JobManager {
 	private JobManager() {}
@@ -55,10 +66,6 @@ public final class JobManager {
 
 	private static final long TTL_SHORT = 12000; // 10 мин
 	private static final long TTL_LONG = 18000;  // 15 мин (крафт-заказы)
-
-	/** Неустойка за срыв смены: отмена 25% от оплаты, таймаут 30%. */
-	private static final double FEE_CANCEL = net.craftnet.config.CraftNetConfig.get().jobCancelFeePct / 100.0;
-	private static final double FEE_TIMEOUT = net.craftnet.config.CraftNetConfig.get().jobTimeoutFeePct / 100.0;
 
 	/** Палитра мини-игры завода. */
 	private static final String[] FACTORY_CATS = {
@@ -114,6 +121,50 @@ public final class JobManager {
 		return !rec(state(server), player).isEmpty();
 	}
 
+	// -------------------- кулдаун окон --------------------
+
+	private static double feeCancel() {
+		return CraftNetConfig.get().jobCancelFeePct / 100.0;
+	}
+
+	private static double feeTimeout() {
+		return CraftNetConfig.get().jobTimeoutFeePct / 100.0;
+	}
+
+	/**
+	 * Смена этого типа уже отработана в текущем окне (лимит jobWindowCooldown)?
+	 * Сменой считается ЛЮБОЕ завершение: оплата, отмена, таймаут — иначе
+	 * отмена→перепринятие была бы бесплатным рероллом состава оффера.
+	 */
+	public static boolean onWindowCooldown(MinecraftServer server, UUID player, String type) {
+		int k = CraftNetConfig.get().jobWindowCooldown;
+		if (k <= 0) return false;
+		long cur = offerWindow(server);
+		long w = Nbt2.sub(Nbt2.sub(state(server).data(), "cool"), player.toString())
+				.getLong(type, Long.MIN_VALUE);
+		return w > cur - k;
+	}
+
+	/** Отметить смену отработанной; мёртвые записи (старше лимита окон) подчищаются. */
+	private static void markCooldown(MinecraftServer server, UUID player, String type) {
+		int k = CraftNetConfig.get().jobWindowCooldown;
+		if (k <= 0) return;
+		JobsState st = state(server);
+		long cur = offerWindow(server);
+		NbtCompound coolAll = Nbt2.sub(st.data(), "cool");
+		NbtCompound c = Nbt2.sub(coolAll, player.toString());
+		c.putLong(type, cur);
+		List<String> dead = new ArrayList<>();
+		for (String key : c.getKeys()) {
+			if (c.getLong(key, Long.MIN_VALUE) <= cur - k) dead.add(key);
+		}
+		for (String key : dead) c.remove(key);
+		if (c.isEmpty()) coolAll.remove(player.toString());
+		else coolAll.put(player.toString(), c);
+		st.data().put("cool", coolAll);
+		st.markDirty();
+	}
+
 	public static NbtCompound jobView(MinecraftServer server, UUID player) {
 		return rec(state(server), player);
 	}
@@ -142,35 +193,42 @@ public final class JobManager {
 		if (server == null) return null;
 		java.util.Random rng = new java.util.Random(player.getUuid().hashCode() ^ win);
 
+		CraftNetConfig cfg = CraftNetConfig.get();
 		NbtCompound offer = new NbtCompound();
 		switch (type) {
 			case T_FACTORY -> {
-				int parts = 3 + rng.nextInt(3); // 3..5 деталей
+				int parts = cfg.jobFactoryMinParts + rng.nextInt(cfg.jobFactoryMaxParts - cfg.jobFactoryMinParts + 1);
 				offer.putInt("partsNeed", parts);
-				offer.putLong("pay", 90 + parts * 35L + rng.nextInt(20)); // 195..285
+				offer.putLong("pay", cfg.jobFactoryBase + parts * (long) cfg.jobFactoryPerPart
+						+ (cfg.jobFactoryJitter > 0 ? rng.nextInt(cfg.jobFactoryJitter) : 0)); // 195..285 по дефолту
 				offer.putString("desc", "Повторяй схему кликами по компонентам");
 				offer.putString("cats", String.join(",", FACTORY_CATS));
 			}
 			case T_FACTORY_ORDER -> {
-				if (!buildCraftOffer(offer, rng, FACTORY_RECIPES, 195, 285, 1, 2, 2, 3)) return null;
+				if (!buildCraftOffer(offer, rng, FACTORY_RECIPES,
+						cfg.jobOrderFactoryMatsPct, cfg.jobOrderFactoryBonus,
+						cfg.jobOrderFactoryMinPay, cfg.jobOrderFactoryMaxPay, 1, 2, 2, 3)) return null;
 				offer.putString("desc", "Цех выдаст материалы — собери на верстаке и сдай");
 			}
 			case T_COOK -> {
-				if (!buildCraftOffer(offer, rng, CAFE_RECIPES, 110, 145, 2, 3, 2, 4)) return null;
+				if (!buildCraftOffer(offer, rng, CAFE_RECIPES,
+						cfg.jobOrderCookMatsPct, cfg.jobOrderCookBonus,
+						cfg.jobOrderCookMinPay, cfg.jobOrderCookMaxPay, 2, 3, 2, 4)) return null;
 				offer.putString("desc", "Бариста выдаст продукты — приготовь и сдай заказ");
 			}
 			case T_LOADER, T_COURIER -> {
 				NbtCompound target = pickTarget(player, rng);
 				if (target == null) return null;
 				if (T_LOADER.equals(type)) {
-					long pay = target.getLong("dist", 10) * 4;
-					pay = Math.max(150, Math.min(190, pay));
+					long pay = target.getLong("dist", 10) * cfg.jobLoaderPerBlock;
+					pay = Math.max(cfg.jobLoaderMinPay, Math.min(cfg.jobLoaderMaxPay, pay));
 					offer.putLong("pay", pay);
 					offer.putString("desc", "Отнести тяжёлый ящик жителю (замедляет!)");
 				} else {
-					int portions = 3 + rng.nextInt(6); // 3..8
+					int portions = cfg.jobCourierMinPortions
+							+ rng.nextInt(cfg.jobCourierMaxPortions - cfg.jobCourierMinPortions + 1);
 					offer.putInt("portions", portions);
-					offer.putLong("pay", 10 + portions * 5L); // 25..50
+					offer.putLong("pay", cfg.jobCourierBase + portions * (long) cfg.jobCourierPerPortion); // 25..50
 					offer.putString("desc", "Доставить пакеты еды жителю");
 				}
 				offer.put("target", target);
@@ -188,10 +246,14 @@ public final class JobManager {
 	/**
 	 * Собрать крафт-заказ: distinct рецептов [minKinds..maxKinds], кол-во
 	 * каждого [minCount..maxCount] единиц ЦЕЛИ (cookie: единица = 8 шт).
-	 * Награда = стоимость материалов ×1.5 + бонус, зажатая в [payLo..payHi].
+	 * Награда = round(стоимость материалов × matsPct/100) + bonus, зажатая
+	 * в окно [payLo..payHi] лестницы. Множитель с бонусом в конфиге подобраны
+	 * так, что медианный заказ платит середину окна; кламп срабатывает лишь
+	 * на крайне дешёвых/дорогих составах (проверка — tools/simulate_jobs.py).
 	 */
 	private static boolean buildCraftOffer(NbtCompound offer, java.util.Random rng,
-			String[][] recipes, int payLo, int payHi, int minKinds, int maxKinds, int minCount, int maxCount) {
+			String[][] recipes, int matsPct, int bonus, int payLo, int payHi,
+			int minKinds, int maxKinds, int minCount, int maxCount) {
 		int kinds = minKinds + rng.nextInt(maxKinds - minKinds + 1);
 		List<Integer> picked = new ArrayList<>();
 		NbtList targets = new NbtList();
@@ -238,7 +300,8 @@ public final class JobManager {
 		}
 		offer.put("targets", targets);
 		offer.put("mats", mats);
-		long pay = Math.round(matsValue * 1.5) + 15;
+		offer.putLong("matsValue", matsValue); // для отображения «заказ материалов на N CR»
+		long pay = Math.round(matsValue * matsPct / 100.0) + bonus;
 		pay = Math.max(payLo, Math.min(payHi, pay));
 		offer.putLong("pay", pay);
 		return true;
@@ -267,6 +330,10 @@ public final class JobManager {
 	public static boolean accept(ServerPlayerEntity player, String type, long win) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null || hasJob(server, player.getUuid())) return false;
+		if (onWindowCooldown(server, player.getUuid(), type)) {
+			player.sendMessage(Text.translatable("craftnet.job.cooldown"), false);
+			return false;
+		}
 		long cur = offerWindow(server);
 		if (win < 0 || win > cur) win = cur;
 		else if (win < cur - 1) win = cur; // слишком старый слепок — берём свежий
@@ -389,6 +456,7 @@ public final class JobManager {
 					player.sendMessage(Text.translatable("craftnet.job.paid", pay, "завод"), false);
 					player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
 					saveRec(st, player.getUuid(), new NbtCompound());
+					markCooldown(server, player.getUuid(), T_FACTORY);
 					return true;
 				}
 				data.putString("seqNeed", newSeq(server, player.getUuid(), parts));
@@ -458,6 +526,7 @@ public final class JobManager {
 				T_COOK.equals(type) ? "повар" : "цех"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
 		saveRec(st, player.getUuid(), new NbtCompound());
+		markCooldown(server, player.getUuid(), type);
 		return 0;
 	}
 
@@ -493,6 +562,7 @@ public final class JobManager {
 				T_LOADER.equals(type) ? "грузчик" : "курьер"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
 		saveRec(st, player.getUuid(), new NbtCompound());
+		markCooldown(server, player.getUuid(), type);
 		return true;
 	}
 
@@ -500,12 +570,12 @@ public final class JobManager {
 
 	/** Отмена текущего задания (с погашением подсветок и штрафом). */
 	public static void cancel(MinecraftServer server, UUID player, boolean silent) {
-		cancelInternal(server, player, silent, FEE_CANCEL, "craftnet.job.cancelled");
+		cancelInternal(server, player, silent, feeCancel(), "craftnet.job.cancelled");
 	}
 
 	/** Таймаут. */
 	private static void expire(MinecraftServer server, UUID player) {
-		cancelInternal(server, player, true, FEE_TIMEOUT, "craftnet.job.expired");
+		cancelInternal(server, player, true, feeTimeout(), "craftnet.job.expired");
 	}
 
 	private static void cancelInternal(MinecraftServer server, UUID player, boolean silentTimeout,
@@ -515,6 +585,7 @@ public final class JobManager {
 		unglowAll(server, player);
 		if (!rec.isEmpty()) {
 			String type = Nbt2.str(rec, "type");
+			markCooldown(server, player, type); // сорванная смена тоже «смена» — анти-реролл оффера
 			NbtCompound data = Nbt2.sub(rec, "data");
 			long fee = Math.round(Nbt2.lng(data, "pay") * feeRate);
 			long matLoss = 0;
@@ -538,7 +609,7 @@ public final class JobManager {
 					String tag = tagOf(player, type);
 					removeTagged(pl, ModBlocks.CARGO_CRATE.asItem(), tag, Integer.MAX_VALUE);
 				}
-				matLoss = 80; // потерянный ящик цеха
+				matLoss = CraftNetConfig.get().jobCargoLossFee; // потерянный ящик цеха
 			} else if (T_COURIER.equals(type) && pl != null) {
 				String tag = tagOf(player, type);
 				removeTagged(pl, ModItems.FOOD_BOX, tag, Integer.MAX_VALUE);
