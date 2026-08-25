@@ -58,6 +58,20 @@ public final class NetHooks {
 
 	/** Открыть телефон (клавиша P — опрос GLFW, без регистрации KeyBinding). */
 	public static void requestOpenPhone() {
+		// H3: без смартфона в инвентаре телефон не открывается (сервер дублирует проверку)
+		var player = MinecraftClient.getInstance().player;
+		if (player == null) return;
+		boolean has = false;
+		for (int i = 0; i < player.getInventory().size(); i++) {
+			if (player.getInventory().getStack(i).isOf(net.craftnet.item.ModItems.PHONE)) {
+				has = true;
+				break;
+			}
+		}
+		if (!has) {
+			player.sendMessage(net.minecraft.text.Text.translatable("craftnet.phone.missing"), true);
+			return;
+		}
 		net.minecraft.nbt.NbtCompound args = new net.minecraft.nbt.NbtCompound();
 		args.putString("screen", "phone");
 		sendAction("any", "open", args);

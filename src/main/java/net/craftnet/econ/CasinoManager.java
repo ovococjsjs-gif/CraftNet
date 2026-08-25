@@ -117,12 +117,13 @@ public final class CasinoManager {
 		}
 		if (slot == null && kinds >= MAX_KINDS) return 2;
 		if (slot != null && Nbt2.i(slot, "count") >= MAX_UNITS) return 3;
-		int canHave = JobManager.countInInventory(player, item);
+		// рабочее имущество (◆ материалы/грузы) в ставку не принимается — анти-фарм
+		int canHave = JobManager.countSellable(player, item);
 		if (canHave <= 0) return 1;
 		count = Math.min(count, canHave);
 		if (slot != null) count = Math.min(count, MAX_UNITS - Nbt2.i(slot, "count"));
 		if (count <= 0) return 3;
-		JobManager.removeFromInventory(player, item, count);
+		JobManager.removeSellable(player, item, count);
 
 		if (slot == null) {
 			slot = new NbtCompound();

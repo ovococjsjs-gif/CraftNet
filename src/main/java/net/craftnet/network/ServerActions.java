@@ -50,8 +50,32 @@ public final class ServerActions {
 	// ============================== открытие / синхронизация ==============================
 
 	public static void openScreen(ServerPlayerEntity player, String screen, @Nullable BlockPos station) {
+		// H3: телефон открывается только при наличии смартфона в инвентаре (анти-пакет)
+		if ("phone".equals(screen) && !hasPhone(player)) {
+			player.sendMessage(Text.translatable("craftnet.phone.missing"), true);
+			return;
+		}
 		OPEN.put(player.getUuid(), new OpenCtx(screen, station == null ? 0L : station.asLong(), "", 0, 0, "", 0));
 		ServerPlayNetworking.send(player, new ModPackets.OpenScreenS2CPayload(screen, buildSync(player, screen)));
+	}
+
+	/** H3: есть ли смартфон CraftNet в инвентаре. */
+	private static boolean hasPhone(ServerPlayerEntity player) {
+		var inv = player.getInventory();
+		for (int i = 0; i < inv.size(); i++) {
+			if (inv.getStack(i).isOf(ModItems.PHONE)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * H2: анти-чит — действия стоек разрешены только рядом с той стойкой,
+	 * через которую экран был открыт (ПКМ по NPC/блоку ставит ctx.station).
+	 */
+	private static boolean nearStation(ServerPlayerEntity player, double maxDist) {
+		OpenCtx ctx = OPEN.get(player.getUuid());
+		if (ctx == null || ctx.station() == 0L) return false;
+		return BlockPos.fromLong(ctx.station()).getSquaredDistance(player.getBlockPos()) <= maxDist * maxDist;
 	}
 
 	/** Периодическая пересинхронизация открытых экранов. */
@@ -104,7 +128,17 @@ public final class ServerActions {
 		try {
 			switch (action) {
 				case "close" -> OPEN.remove(player.getUuid());
-				case "open" -> openScreen(player, args.getString("screen", screen), null);
+				case "open" -> {
+					// H2: whitelist — кастомным пакетом разрешено открывать только телефон;
+					// стоечные экраны (pvz/bank/tower/job) открываются лишь ПКМ по станции
+					String target = args.getString("screen", screen);
+					if (!"phone".equals(target)) {
+						net.craftnet.CraftNet.LOGGER.debug("[CraftNet] Отклонён open '{}' от {}",
+								target, player.getName().getString());
+						return;
+					}
+					openScreen(player, "phone", null);
+				}
 				default -> {
 					switch (screen) {
 						case "phone" -> handlePhone(player, action, args);
@@ -133,6 +167,8 @@ public final class ServerActions {
 	private static void handlePhone(ServerPlayerEntity player, String action, NbtCompound args) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
+		// H3: действия телефона без смартфона в инвентаре — только от пакет-ботов
+		if (!hasPhone(player)) return;
 		OpenCtx ctx = OPEN.get(player.getUuid());
 		switch (action) {
 			case "query_shop" -> {
@@ -299,6 +335,11 @@ public final class ServerActions {
 	private static void handlePvz(ServerPlayerEntity player, String action, NbtCompound args) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
+		// H2: экран ПВЗ открывается ПКМ по стойке; действия — только рядом с ней (24 м)
+		if (!nearStation(player, 24.0)) {
+			player.sendMessage(Text.translatable("craftnet.too_far"), true);
+			return;
+		}
 		switch (action) {
 			case "claim" -> {
 				long id = args.getLong("id", -1L);
@@ -324,9 +365,10 @@ public final class ServerActions {
 				int count = args.getInt("count", 1);
 				Item item = Registries.ITEM.get(Identifier.tryParse(id));
 				if (item == null || count <= 0 || !PriceManager.tradeable(id)) return;
-				count = Math.min(count, JobManager.countInInventory(player, item));
+				// H1: рабочее имущество (◆ материалы цеха/кафе, грузы) продаже не подлежит
+				count = Math.min(count, JobManager.countSellable(player, item));
 				if (count <= 0) return;
-				JobManager.removeFromInventory(player, item, count);
+				JobManager.removeSellable(player, item, count);
 				long value = (long) PriceManager.sellPrice(id) * count;
 				VillageManager.SignalInfo sig = VillageManager.signalFor(player);
 				int mult = VillageManager.travelMultiplier(sig);
@@ -387,6 +429,11 @@ public final class ServerActions {
 	private static void handleBank(ServerPlayerEntity player, String action, NbtCompound args) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
+		// H2: обналичивание/депозит — только рядом со стойкой банка (24 м)
+		if (!nearStation(player, 24.0)) {
+			player.sendMessage(Text.translatable("craftnet.too_far"), true);
+			return;
+		}
 		switch (action) {
 			case "cashout" -> {
 				int amount = args.getInt("amount", 0);
@@ -445,6 +492,12 @@ public final class ServerActions {
 	private static void handleJob(ServerPlayerEntity player, String type, String action, NbtCompound args) {
 		MinecraftServer server = player.getEntityWorld().getServer();
 		if (server == null) return;
+		// H2: экран работ открывается ПКМ по NPC; действия — только рядом (24 м).
+		// (отмена издалека — командой /craftnet job cancel)
+		if (!nearStation(player, 24.0)) {
+			player.sendMessage(Text.translatable("craftnet.too_far"), true);
+			return;
+		}
 		switch (action) {
 			case "accept" -> {
 				if (JobManager.hasJob(server, player.getUuid())) {
@@ -666,7 +719,7 @@ public final class ServerActions {
 		var inv = player.getInventory();
 		for (int i = 0; i < inv.size(); i++) {
 			ItemStack s2 = inv.getStack(i);
-			if (s2.isEmpty()) continue;
+			if (s2.isEmpty() || JobManager.isJobTagged(s2)) continue;
 			String id = Registries.ITEM.getId(s2.getItem()).toString();
 			if (!PriceManager.tradeable(id)) continue;
 			int price = PriceManager.sellPrice(id);
@@ -730,13 +783,13 @@ public final class ServerActions {
 		d.put("payouts", pays);
 		d.putLong("payoutSum", sum);
 
-		// продажа: агрегация инвентаря по предмету
+		// продажа: агрегация инвентаря по предмету (без ◆-рабочего имущества)
 		Map<String, int[]> agg = new java.util.LinkedHashMap<>();
 		Map<String, String> names = new java.util.HashMap<>();
 		var inv = player.getInventory();
 		for (int i = 0; i < inv.size(); i++) {
 			ItemStack s = inv.getStack(i);
-			if (s.isEmpty()) continue;
+			if (s.isEmpty() || JobManager.isJobTagged(s)) continue;
 			String id = Registries.ITEM.getId(s.getItem()).toString();
 			if (!PriceManager.tradeable(id)) continue;
 			int price = PriceManager.sellPrice(id);

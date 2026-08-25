@@ -412,6 +412,14 @@ public final class JobManager {
 			Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(t, "id")));
 			removeFromInventory(player, item, Nbt2.i(t, "need"));
 		}
+		// конфискаем остатки выданных ◆материалов — смена закрыта, склад не складируется
+		String tag = tagOf(player.getUuid(), type);
+		for (var el : data.getListOrEmpty("mats")) {
+			if (!(el instanceof NbtCompound m)) continue;
+			Item item = Registries.ITEM.get(Identifier.tryParse(Nbt2.str(m, "id")));
+			if (item == null) continue;
+			removeTagged(player, item, tag, Integer.MAX_VALUE);
+		}
 		long pay = Nbt2.lng(data, "pay");
 		MoneyManager.add(server, player.getUuid(), pay,
 				T_COOK.equals(type) ? "работа: повар" : "работа: цех");
@@ -660,6 +668,42 @@ public final class JobManager {
 	}
 
 	// -------------------- инвентарь --------------------
+
+	/**
+	 * Помечен ли стак рабочим имуществом (компонент job_tag).
+	 * Такое нельзя продать в ПВЗ, выставить на барахолку или поставить в казино —
+	 * иначе материалы цеха превращаются в бесконечный фарм (принять → продать → отменить).
+	 */
+	public static boolean isJobTagged(ItemStack stack) {
+		if (stack.isEmpty()) return false;
+		String t = stack.get(ModComponents.JOB_TAG);
+		return t != null && !t.isEmpty();
+	}
+
+	/** Сколько НЕпомеченных предметов этого вида в инвентаре (только их можно продать). */
+	public static int countSellable(ServerPlayerEntity player, Item item) {
+		int n = 0;
+		var inv = player.getInventory();
+		for (int i = 0; i < inv.size(); i++) {
+			ItemStack s = inv.getStack(i);
+			if (s.isOf(item) && !isJobTagged(s)) n += s.getCount();
+		}
+		return n;
+	}
+
+	/** Снять count штук, пропуская помеченные (рабочие) стаки. */
+	public static boolean removeSellable(ServerPlayerEntity player, Item item, int count) {
+		if (countSellable(player, item) < count) return false;
+		var inv = player.getInventory();
+		for (int i = 0; i < inv.size() && count > 0; i++) {
+			ItemStack s = inv.getStack(i);
+			if (!s.isOf(item) || isJobTagged(s)) continue;
+			int take = Math.min(s.getCount(), count);
+			s.decrement(take);
+			count -= take;
+		}
+		return count == 0;
+	}
 
 	public static int countInInventory(ServerPlayerEntity player, Item item) {
 		int n = 0;

@@ -95,10 +95,11 @@ public final class MarketManager {
 		if (listingsOf(server, player.getUuid()) >= MAX_PER_PLAYER) return 1;
 		var item = net.minecraft.registry.Registries.ITEM.get(net.minecraft.util.Identifier.tryParse(itemId));
 		if (item == null || !PriceManager.tradeable(itemId)) return 2;
-		int have = JobManager.countInInventory(player, item);
+		// рабочее имущество (◆ материалы/грузы) выставлять нельзя — анти-фарм
+		int have = JobManager.countSellable(player, item);
 		count = Math.min(Math.min(count, 64), have);
 		if (count <= 0) return 2;
-		JobManager.removeFromInventory(player, item, count);
+		JobManager.removeSellable(player, item, count);
 
 		MarketState st = get(server);
 		NbtCompound l = new NbtCompound();
