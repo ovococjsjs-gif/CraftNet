@@ -75,7 +75,9 @@ public abstract class CraftNetScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyInput input) {
+		boolean anyFocused = false;
 		for (UiKit.TextInput in : inputs) {
+			if (in.focused) anyFocused = true;
 			if (!in.focused) continue;
 			// L6: Ctrl+V — вставка из буфера
 			if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_V && ctrlDown()) {
@@ -84,7 +86,17 @@ public abstract class CraftNetScreen extends Screen {
 			}
 			if (in.key(input.key())) return true;
 		}
+		// PgUp/PgDn — листание страниц клавиатурой (не во время набора текста)
+		if (!anyFocused) {
+			if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_PAGE_UP && onPageKey(-1)) return true;
+			if (input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_PAGE_DOWN && onPageKey(1)) return true;
+		}
 		return super.keyPressed(input);
+	}
+
+	/** @return true, если клавиша страницы обработана (step: −1 назад, +1 вперёд). */
+	protected boolean onPageKey(int step) {
+		return false;
 	}
 
 	/** Нажат ли Ctrl (левый/правый) — для Ctrl+V в инпутах. */

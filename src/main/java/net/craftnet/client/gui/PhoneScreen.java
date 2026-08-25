@@ -350,12 +350,15 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.card(ctx, x + 8, ry, PW - 16, 20, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "id")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
-			UiKit.label(ctx, textRenderer, x + 34, ry + 2, trim(str(e, "name"), 26), UiKit.COL_TEXT);
+			// кнопка покупки начинается с x+PW-68 — подписи вежливо обрезаем по пикселям
+			int labelW = PW - 68 - 34 - 6;
+			UiKit.label(ctx, textRenderer, x + 34, ry + 2,
+					UiKit.fit(textRenderer, str(e, "name"), labelW), UiKit.COL_TEXT);
 			// сервер считает итог так же: round(buy*count*(1-disc/100)) — сходится буква в букву
 			long total = Math.round((long) i(e, "buy") * buyCount * (100 - disc) / 100.0);
 			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
-					i(e, "buy") + " CR/шт" + (disc > 0 ? " (−" + disc + "%)" : "")
-							+ " · продажа " + i(e, "sell"), UiKit.COL_TEXT_DIM);
+					UiKit.fit(textRenderer, i(e, "buy") + " CR/шт" + (disc > 0 ? " (−" + disc + "%)" : "")
+							+ " · продажа " + i(e, "sell"), labelW), UiKit.COL_TEXT_DIM);
 			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
 					lng(data, "balance") >= total);
 			final String fid = str(e, "id");
@@ -886,10 +889,13 @@ public class PhoneScreen extends CraftNetScreen {
 			UiKit.card(ctx, x + 8, ry, PW - 16, 20, UiKit.COL_PANEL);
 			Item item = Registries.ITEM.get(Identifier.tryParse(str(e, "itemId")));
 			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 12, ry + 2);
-			UiKit.label(ctx, textRenderer, x + 34, ry + 2, trim(str(e, "name"), 20) + " ×" + i(e, "count"),
+			int labelW = PW - 68 - 34 - 6;
+			UiKit.label(ctx, textRenderer, x + 34, ry + 2,
+					UiKit.fit(textRenderer, str(e, "name") + " ×" + i(e, "count"), labelW),
 					UiKit.COL_TEXT);
 			UiKit.label(ctx, textRenderer, x + 34, ry + 11,
-					"от " + trim(str(e, "seller"), 13) + " · " + i(e, "price") + " CR/шт", UiKit.COL_TEXT_DIM);
+					UiKit.fit(textRenderer, "от " + str(e, "seller") + " · " + i(e, "price") + " CR/шт", labelW),
+					UiKit.COL_TEXT_DIM);
 			long total = (long) i(e, "price") * i(e, "count");
 			UiKit.button(ctx, textRenderer, x + PW - 68, ry + 3, 60, 14, total + " CR", mx, my,
 					lng(data, "balance") >= total);
@@ -1453,6 +1459,16 @@ public class PhoneScreen extends CraftNetScreen {
 	@Override
 	protected boolean onScroll(double mx, double my, double dir) {
 		int step = dir < 0 ? 1 : -1;
+		return pageBy(step);
+	}
+
+	/** PgUp/PgDn листают те же страницы, что и колесо мыши. */
+	@Override
+	protected boolean onPageKey(int step) {
+		return pageBy(step);
+	}
+
+	private boolean pageBy(int step) {
 		switch (tab) {
 			case SHOP -> {
 				NbtCompound shop = sub(data, "shop");

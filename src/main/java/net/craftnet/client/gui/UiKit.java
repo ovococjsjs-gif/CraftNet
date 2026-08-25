@@ -88,6 +88,17 @@ public final class UiKit {
 		return (neg ? "-" : "") + out;
 	}
 
+	/** Обрезать строку под ширину в пикселях (с «…») — для узких колонок и подписей. */
+	public static String fit(TextRenderer tr, String s, int maxW) {
+		if (s == null) return "";
+		if (tr.getWidth(s) <= maxW) return s;
+		String t = s;
+		while (t.length() > 1 && tr.getWidth(t.trim() + "…") > maxW) {
+			t = t.substring(0, t.length() - 1);
+		}
+		return t.trim() + "…";
+	}
+
 	/** Лёгкое текстовое поле без виджетов. */
 	public static final class TextInput {
 		public int x, y, w;

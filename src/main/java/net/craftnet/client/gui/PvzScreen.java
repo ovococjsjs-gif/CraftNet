@@ -127,12 +127,7 @@ public class PvzScreen extends CraftNetScreen {
 
 	/** Обрезать строку под ширину в пикселях (с «…»). */
 	private String fit(String s, int maxW) {
-		if (textRenderer.getWidth(s) <= maxW) return s;
-		String t = s;
-		while (t.length() > 1 && textRenderer.getWidth(t.trim() + "…") > maxW) {
-			t = t.substring(0, t.length() - 1);
-		}
-		return t.trim() + "…";
+		return UiKit.fit(textRenderer, s, maxW);
 	}
 
 	// ------------------------------ посылки ------------------------------
