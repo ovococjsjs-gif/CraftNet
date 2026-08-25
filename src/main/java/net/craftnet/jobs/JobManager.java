@@ -169,6 +169,28 @@ public final class JobManager {
 		return rec(state(server), player);
 	}
 
+	/** Записать итог оплаченной смены — баннер «смена завершена» на экране нанимателя. */
+	private static void recordResult(MinecraftServer server, UUID player, String type, long pay) {
+		JobsState st = state(server);
+		NbtCompound results = Nbt2.sub(st.data(), "results");
+		NbtCompound r = new NbtCompound();
+		r.putString("type", type);
+		r.putLong("pay", pay);
+		r.putLong("at", server.getOverworld().getTime());
+		results.put(player.toString(), r);
+		st.data().put("results", results);
+		st.markDirty();
+	}
+
+	/** Свежий итог последней оплаченной смены (моложе maxAge тиков) или пустой compound. */
+	public static NbtCompound lastResult(MinecraftServer server, UUID player, long maxAge) {
+		NbtCompound r = Nbt2.sub(Nbt2.sub(state(server).data(), "results"), player.toString());
+		if (r.isEmpty()) return new NbtCompound();
+		long now = server.getOverworld().getTime();
+		if (now - r.getLong("at", Long.MIN_VALUE) > maxAge) return new NbtCompound();
+		return r;
+	}
+
 	// -------------------- генерация офферов --------------------
 
 	/** Текущее 10-минутное окно офферов. */
@@ -453,6 +475,7 @@ public final class JobManager {
 					long pay = Nbt2.lng(data, "pay");
 					MoneyManager.add(server, player.getUuid(), pay, "работа: завод");
 					payStats(server, player.getUuid(), StatsManager.JOBS_FACTORY, pay);
+					recordResult(server, player.getUuid(), T_FACTORY, pay);
 					player.sendMessage(Text.translatable("craftnet.job.paid", pay, "завод"), false);
 					player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
 					saveRec(st, player.getUuid(), new NbtCompound());
@@ -522,6 +545,7 @@ public final class JobManager {
 				T_COOK.equals(type) ? "работа: повар" : "работа: цех");
 		payStats(server, player.getUuid(),
 				T_COOK.equals(type) ? StatsManager.JOBS_COOK : StatsManager.JOBS_FACTORY, pay);
+		recordResult(server, player.getUuid(), type, pay);
 		player.sendMessage(Text.translatable("craftnet.job.paid", pay,
 				T_COOK.equals(type) ? "повар" : "цех"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
@@ -558,6 +582,7 @@ public final class JobManager {
 				T_LOADER.equals(type) ? "работа: грузчик" : "работа: курьер");
 		payStats(server, player.getUuid(),
 				T_LOADER.equals(type) ? StatsManager.JOBS_LOADER : StatsManager.JOBS_COURIER, pay);
+		recordResult(server, player.getUuid(), type, pay);
 		player.sendMessage(Text.translatable("craftnet.job.paid", pay,
 				T_LOADER.equals(type) ? "грузчик" : "курьер"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);

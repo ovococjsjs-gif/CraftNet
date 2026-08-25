@@ -932,11 +932,14 @@ public final class ServerActions {
 	}
 
 	private static void fillJobSync(ServerPlayerEntity player, MinecraftServer server, NbtCompound d, String group) {
+		d.putLong("now", server.getOverworld().getTime());
+		// итог последней оплаченной смены (2 мин) — баннер «смена завершена»
+		NbtCompound res = JobManager.lastResult(server, player.getUuid(), 2400);
+		if (!res.isEmpty()) d.put("jobResult", res);
 		d.putInt("hasJob", JobManager.hasJob(server, player.getUuid()) ? 1 : 0);
 		NbtCompound job = JobManager.jobView(server, player.getUuid());
 		if (!job.isEmpty()) {
 			d.put("active", job);
-			d.putLong("now", server.getOverworld().getTime());
 			return;
 		}
 		if ("factory".equals(group)) {

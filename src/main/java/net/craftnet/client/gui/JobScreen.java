@@ -50,6 +50,7 @@ public class JobScreen extends CraftNetScreen {
 
 		if (i(data, "hasJob") == 1) {
 			renderActive(ctx, x + 8, y + 18, mx, my);
+			renderResultBanner(ctx, x, y, mx, my);
 			return;
 		}
 		if (isCafe()) {
@@ -63,6 +64,56 @@ public class JobScreen extends CraftNetScreen {
 			renderOffer(ctx, x + 8, y + 116, PW - 16, 92, sub(data, "offerFactory"),
 					"Сборка по схеме · мини-игра", "factory", mx, my);
 		}
+		renderResultBanner(ctx, x, y, mx, my);
+	}
+
+	// ------------------------------ баннер «смена завершена» ------------------------------
+
+	/** result-запись, которую уже закрыли крестиком (по серверному штампу at). */
+	private long resultDismissed = Long.MIN_VALUE;
+	/** result-запись, для которой уже сыграли фанфары. */
+	private long resultChimed = Long.MIN_VALUE;
+
+	/** Зелёная лента под панелью: итог последней оплаченной смены (2 мин свежести). */
+	private void renderResultBanner(DrawContext ctx, int x, int y, double mx, double my) {
+		NbtCompound res = sub(data, "jobResult");
+		if (res.isEmpty()) return;
+		long at = lng(res, "at");
+		if (at == resultDismissed) return;
+		long now = lng(data, "now");
+		if (now > 0 && now - at > 2400) return; // протухла
+
+		if (at != resultChimed) { // один раз — мягкие фанфары
+			resultChimed = at;
+			playUiSoft(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.35f);
+		}
+		int by = y + PH + 6;
+		UiKit.card(ctx, x + 8, by, PW - 16, 26, UiKit.COL_GREEN_DIM);
+		long pay = lng(res, "pay");
+		long xp = Math.max(1, pay / 10); // зеркало формулы опыта payStats
+		String line = "✔ Смена завершена (" + jobShort(str(res, "type")) + "): "
+				+ "+" + pay + " CR · +" + xp + " XP";
+		UiKit.label(ctx, textRenderer, x + 18, by + 9, UiKit.fit(textRenderer, line, PW - 60), UiKit.COL_TEXT);
+		UiKit.label(ctx, textRenderer, x + PW - 28, by + 9, "✕", UiKit.COL_TEXT);
+		clickable(x + PW - 32, by + 4, 18, 18, () -> resultDismissed = at);
+	}
+
+	private static void playUiSoft(net.minecraft.sound.SoundEvent ev, float volume) {
+		MinecraftClient mc = MinecraftClient.getInstance();
+		if (mc != null && mc.getSoundManager() != null) {
+			mc.getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.ui(ev, volume));
+		}
+	}
+
+	private static String jobShort(String type) {
+		return switch (type) {
+			case "factory" -> "завод";
+			case "factory_order" -> "цех";
+			case "cook" -> "повар";
+			case "loader" -> "грузчик";
+			case "courier" -> "курьер";
+			default -> type;
+		};
 	}
 
 	// ------------------------------ активная смена ------------------------------
@@ -90,7 +141,7 @@ public class JobScreen extends CraftNetScreen {
 		} else if ("factory_order".equals(type) || "cook".equals(type)) {
 			renderCraftActive(ctx, x, y, jd, mx, my);
 		} else {
-			renderDeliveryTarget(ctx, x, y, jd);
+			renderDeliveryTarget(ctx, x, y, job, jd);
 		}
 
 		UiKit.button(ctx, textRenderer, x + PW - 114, y + 160, 96, 16, "Отменить", mx, my, true);
@@ -109,30 +160,52 @@ public class JobScreen extends CraftNetScreen {
 		};
 	}
 
-	/** Активный крафт-заказ: цели с прогрессом + выданные материалы. */
+	/** Активный крафт-заказ: готовность + цели с прогресс-барами (недостающие — сверху). */
 	private void renderCraftActive(DrawContext ctx, int x, int y, NbtCompound jd, double mx, double my) {
-		if (rows(jd, "targets").isEmpty()) {
+		var targets = rows(jd, "targets");
+		if (targets.isEmpty()) {
 			UiKit.label(ctx, textRenderer, x + 10, y + 40, "Формат задания устарел — отмени смену.", UiKit.COL_TEXT_DIM);
 			return;
 		}
-		UiKit.label(ctx, textRenderer, x + 10, y + 34, "Сдать (крафт из выданных ◆материалов):", UiKit.COL_ACCENT);
-		int ry = y + 46;
-		boolean allDone = true;
-		for (NbtCompound t : rows(jd, "targets")) {
+		// живой прогресс по инвентарю клиента: недособранные — в начало списка
+		record Row(NbtCompound t, Item item, int have, int need, boolean ok) {}
+		var list = new java.util.ArrayList<Row>();
+		int got = 0, total = 0;
+		for (NbtCompound t : targets) {
 			Item item = itemOf(str(t, "id"));
 			int have = countClient(item);
 			int need = i(t, "need");
 			boolean ok = have >= need;
-			if (!ok) allDone = false;
-			UiKit.card(ctx, x + 8, ry, PW - 32, 18, UiKit.COL_PANEL);
-			if (item != null) ctx.drawItem(item.getDefaultStack(), x + 11, ry + 1);
-			UiKit.label(ctx, textRenderer, x + 32, ry + 5, trim(str(t, "name"), 18), UiKit.COL_TEXT);
-			String pr = have + " / " + need;
-			ctx.drawText(textRenderer, Text.literal(pr), x + PW - 42 - textRenderer.getWidth(pr), ry + 5,
-					ok ? UiKit.COL_GREEN : UiKit.COL_YELLOW, false);
-			ry += 21;
+			list.add(new Row(t, item, have, need, ok));
+			got += Math.min(have, need);
+			total += need;
 		}
-		// выданные материалы (справочно)
+		list.sort(java.util.Comparator.comparing(Row::ok).thenComparing(r -> str(r.t(), "name")));
+		boolean allDone = got >= total;
+
+		int ready = total <= 0 ? 100 : (int) (got * 100L / total);
+		UiKit.label(ctx, textRenderer, x + 10, y + 32,
+				"готовность заказа: " + ready + "%", UiKit.COL_ACCENT);
+		UiKit.progress(ctx, x + 10, y + 42, PW - 36, 4, ready,
+				allDone ? UiKit.COL_GREEN : UiKit.COL_YELLOW);
+
+		int ry = y + 52;
+		for (Row r : list) {
+			UiKit.card(ctx, x + 8, ry, PW - 32, 21, UiKit.COL_PANEL);
+			if (r.item() != null) ctx.drawItem(r.item().getDefaultStack(), x + 11, ry + 2);
+			UiKit.label(ctx, textRenderer, x + 31, ry + 3, trim(str(r.t(), "name"), 20),
+					r.ok() ? UiKit.COL_TEXT_DIM : UiKit.COL_TEXT);
+			// строковый прогресс слева, мини-бар в правой половине строки
+			int barX = x + 31, barY = ry + 14, barW = PW - 132;
+			UiKit.progress(ctx, barX, barY, barW, 3,
+					r.need() <= 0 ? 100 : (int) (Math.min(r.have(), r.need()) * 100L / r.need()),
+					r.ok() ? UiKit.COL_GREEN : UiKit.COL_YELLOW);
+			String pr = r.ok() ? "✓" : r.have() + " / " + r.need();
+			ctx.drawText(textRenderer, Text.literal(pr), x + PW - 42 - textRenderer.getWidth(pr), ry + 3,
+					r.ok() ? UiKit.COL_GREEN : UiKit.COL_YELLOW, false);
+			ry += 24;
+		}
+		// выданные ◆материалы (справочно)
 		UiKit.label(ctx, textRenderer, x + 10, ry + 2, "выдано со склада:", UiKit.COL_TEXT_DIM);
 		ry += 12;
 		int ix = x + 10;
@@ -142,7 +215,8 @@ public class JobScreen extends CraftNetScreen {
 			UiKit.label(ctx, textRenderer, ix + 2, ry + 17, "×" + i(m, "count"), UiKit.COL_TEXT_DIM);
 			ix += 24;
 		}
-		UiKit.button(ctx, textRenderer, x + 10, y + 160, 110, 16, "Сдать заказ", mx, my, allDone);
+		UiKit.button(ctx, textRenderer, x + 10, y + 160, 110, 16,
+				allDone ? "Сдать заказ" : "ещё: " + (total - got) + " шт.", mx, my, allDone);
 		if (allDone) {
 			clickable(x + 10, y + 160, 110, 16, () -> send("handin", new NbtCompound()));
 		}
@@ -155,10 +229,8 @@ public class JobScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 10, y + 30,
 				"Собрано деталей: " + parts + " / " + partsNeed, UiKit.COL_TEXT);
 
-		int barX = x + 10, barY = y + 41, barW = PW - 36, barH = 5;
-		ctx.fill(barX, barY, barX + barW, barY + barH, UiKit.COL_PANEL);
-		int fill = partsNeed <= 0 ? 0 : (int) (barW * (parts / (double) partsNeed));
-		if (fill > 0) ctx.fill(barX, barY, barX + fill, barY + barH, UiKit.COL_GREEN);
+		UiKit.progress(ctx, x + 10, y + 41, PW - 36, 5,
+				partsNeed <= 0 ? 0 : (int) (parts * 100L / partsNeed), UiKit.COL_GREEN);
 
 		String[] seq = str(jd, "seqNeed").split(",");
 		String haveStr = str(jd, "seqHave");
@@ -200,15 +272,37 @@ public class JobScreen extends CraftNetScreen {
 		UiKit.label(ctx, textRenderer, x + 10, y + 132, "схема растёт: каждая следующая на шаг длиннее", UiKit.COL_TEXT_DIM);
 	}
 
-	/** Цель доставки (грузчик/курьер). */
-	private void renderDeliveryTarget(DrawContext ctx, int x, int y, NbtCompound jd) {
+	/** Цель доставки (грузчик/курьер): адрес, живая дистанция, груз при себе. */
+	private void renderDeliveryTarget(DrawContext ctx, int x, int y, NbtCompound job, NbtCompound jd) {
+		String type = str(job, "type");
 		NbtCompound t = sub(jd, "target");
 		String nm = str(t, "name").isEmpty() ? "житель" : str(t, "name");
 		UiKit.label(ctx, textRenderer, x + 10, y + 34, "доставка: " + nm, UiKit.COL_TEXT);
+
+		// живая дистанция от игрока до цели (клиент знает свои координаты)
+		String dist = "";
+		MinecraftClient mc = MinecraftClient.getInstance();
+		if (mc != null && mc.player != null) {
+			double dx = mc.player.getBlockPos().getX() - i(t, "x");
+			double dz = mc.player.getBlockPos().getZ() - i(t, "z");
+			dist = " (±" + (int) Math.sqrt(dx * dx + dz * dz) + " м)";
+		}
 		UiKit.label(ctx, textRenderer, x + 10, y + 46,
-				"координаты: " + i(t, "x") + ", " + i(t, "y") + ", " + i(t, "z"), UiKit.COL_TEXT_DIM);
+				"координаты: " + i(t, "x") + ", " + i(t, "y") + ", " + i(t, "z") + dist, UiKit.COL_TEXT_DIM);
 		UiKit.label(ctx, textRenderer, x + 10, y + 58, "цель светится + стрелка-навигатор в HUD", UiKit.COL_ACCENT);
-		UiKit.label(ctx, textRenderer, x + 10, y + 70, "награда: " + lng(jd, "pay") + " CR", UiKit.COL_YELLOW);
+
+		// груз при себе: ящик (грузчик) / пакеты count из carryNeed (курьер)
+		boolean loader = "loader".equals(type);
+		Item cargoItem = itemOf(loader ? "craftnet:cargo_crate" : "craftnet:food_box");
+		int have = countClient(cargoItem);
+		int need = Math.max(1, i(job, "carryNeed"));
+		UiKit.label(ctx, textRenderer, x + 10, y + 72,
+				(loader ? "ящик при себе: " : "пакетов при себе: ") + have + " / " + need,
+				have >= need ? UiKit.COL_GREEN : UiKit.COL_YELLOW);
+		UiKit.progress(ctx, x + 10, y + 82, PW - 36, 4,
+				(int) (Math.min(have, need) * 100L / need),
+				have >= need ? UiKit.COL_GREEN : UiKit.COL_YELLOW);
+		UiKit.label(ctx, textRenderer, x + 10, y + 90, "награда: " + lng(jd, "pay") + " CR", UiKit.COL_YELLOW);
 	}
 
 	// ------------------------------ офферы ------------------------------
