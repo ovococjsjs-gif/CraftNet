@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
@@ -56,12 +57,20 @@ public class CraftNet implements ModInitializer {
 				AdminCommands.register(dispatcher));
 
 		ServerLifecycleEvents.SERVER_STARTING.register(s -> server = s);
+		ServerLifecycleEvents.START_DATA_PACK_CONTENTS_RELOAD.register((s, rm) ->
+				CraftNet.LOGGER.info("[CraftNet] Релоад датапаков…"));
+		ServerLifecycleEvents.END_DATA_PACK_CONTENTS_RELOAD.register((s, rm, ok) ->
+				VillageStructureInjector.inject(s));
 		ServerLifecycleEvents.SERVER_STARTED.register(s -> {
 			server = s;
 			VillageStructureInjector.inject(s);
 			StocksManager.ensureDefaults(s);
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(s -> server = null);
+
+		// Деревня сгенерировалась (стартовый чанк загрузился) → очередь на
+		// вышку и здания: обслуживание идёт в главном тике, не из генерации.
+		ServerChunkEvents.CHUNK_LOAD.register((world, chunk) -> VillageManager.onChunkLoad(world, chunk));
 
 		// Выдать телефон новичку со стартовым капиталом
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, s) -> {

@@ -18,13 +18,19 @@ import net.craftnet.mixin.StructurePoolAccessor;
 
 /**
  * Инъекция наших NBT-зданий в пулы домов всех типов деревень.
- * Запускаем на SERVER_STARTED — пулы к этому моменту собраны из датапаков.
+ * Запускаем на SERVER_STARTED и END_DATA_PACK_CONTENTS_RELOAD — пулы
+ * к этим моментам собраны (и пересобраны) из датапаков.
+ *
+ * ГАРАНТИЯ заселения деревень при этом — не здесь: программное размещение
+ * зданий делает VillageManager.placeVillageBuildings (StructureTemplate.place
+ * по кольцу у деревни). Инъекция остаётся бонусом — «разбавляет» jigsaw-
+ * генерацию ещё и внутри улиц.
  *
  * В 1.21.11 список elementWeights после декодирования иммутабелен, поэтому
- * тихий add() в него (как было раньше) просто падал в catch — здания не
+ * тихий add() в него (как было в ранних версиях) просто падал — здания не
  * генерировались вовсе. Теперь: заменяем elementWeights новым списком
- * (ваниль + мы) И добавляем развёрнутую копию в elements — так покрыты
- * оба пути семплинга пула.
+ * (ваниль + мы) И добавляем развёрнутую копию в elements, покрывая оба
+ * пути семплинга пула.
  */
 public final class VillageStructureInjector {
 	private VillageStructureInjector() {}
@@ -39,6 +45,16 @@ public final class VillageStructureInjector {
 	private static final String[] TYPES = {"plains", "desert", "savanna", "snowy", "taiga"};
 
 	public static void inject(MinecraftServer server) {
+		int existing = 0;
+		for (String id : ENTRIES.keySet()) {
+			var tpl = server.getStructureTemplateManager().getTemplate(Identifier.of(id));
+			if (tpl.isPresent()) {
+				existing++;
+			} else {
+				CraftNet.LOGGER.error("[CraftNet] Шаблон НЕ НАЙДЕН: {} (здания не смогут генерироваться!)", id);
+			}
+		}
+
 		Registry<StructurePool> pools = server.getRegistryManager().getOrThrow(RegistryKeys.TEMPLATE_POOL);
 		int touched = 0;
 		int added = 0;
@@ -47,12 +63,16 @@ public final class VillageStructureInjector {
 				Identifier poolId = Identifier.of("minecraft",
 						"village/" + type + (zombie ? "/zombie" : "") + "/houses");
 				StructurePool pool = pools.get(poolId);
-				if (pool == null) continue;
+				if (pool == null) {
+					CraftNet.LOGGER.warn("[CraftNet] Пул не найден: {}", poolId);
+					continue;
+				}
 				added += addToPool(pool);
 				touched++;
 			}
 		}
-		CraftNet.LOGGER.info("[CraftNet] Здания добавлены в {} пулов деревень ({} элементов)", touched, added);
+		CraftNet.LOGGER.info("[CraftNet] Джигсоу-инъекция зданий: {} пулов, {} элементов, шаблонов валидно {}/{}",
+				touched, added, existing, ENTRIES.size());
 	}
 
 	private static int addToPool(StructurePool pool) {
@@ -61,9 +81,10 @@ public final class VillageStructureInjector {
 				new ArrayList<>(acc.craftnet$getElementWeights());
 		int added = 0;
 		for (Map.Entry<String, Integer> e : ENTRIES.entrySet()) {
+			// пулы после /reload — свежие объекты из датапаков, дубликатов нет
 			StructurePoolElement element = StructurePoolElement
 					.ofLegacySingle(e.getKey())
-					.apply(StructurePool.Projection.RIGID);
+					.apply(StructurePool.Projection.TERRAIN_MATCHING);
 			// 1) взвешенный список (заменяем целиком — исходный иммутабелен)
 			weights.add(Pair.of(element, e.getValue()));
 			// 2) развёрнутый список, из которого тоже умеют сэмплить

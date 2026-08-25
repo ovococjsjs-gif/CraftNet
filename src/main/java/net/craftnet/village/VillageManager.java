@@ -10,13 +10,20 @@ import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.StructureTags;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.structure.StructurePlacementData;
+import net.minecraft.structure.StructureTemplate;
 import net.minecraft.text.Text;
+import net.minecraft.util.BlockRotation;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.chunk.WorldChunk;
 
 import net.craftnet.block.ModBlocks;
 import net.craftnet.econ.MoneyManager;
@@ -180,12 +187,98 @@ public final class VillageManager {
 	// ------------------- Обнаружение и регистрация -------------------
 
 	public static void tick(MinecraftServer server, long tick) {
+		if (tick % 20 == 0) drainPending(server);
+		if (tick % 120 == 60) retryUnsettled(server);
 		if (tick % 160 != 0) return;
 		List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
 		int idx = (int) ((tick / 160) % Math.max(1, players.size()));
 		if (players.isEmpty()) return;
 		ServerPlayerEntity p = players.get(idx % players.size());
 		scanAround(p);
+	}
+
+	/**
+	 * Чанк только что загружен: если в нём началась деревня — отложить
+	 * регистрацию (мир правим только в главном тике, не из потока генерации).
+	 * Благодаря этому вышка и здания появляются сразу, а не после скана.
+	 */
+	public static void onChunkLoad(ServerWorld world, WorldChunk chunk) {
+		MinecraftServer server = world.getServer();
+		if (server == null) return;
+		var starts = chunk.getStructureStarts();
+		if (starts.isEmpty()) return;
+		Registry<net.minecraft.world.gen.structure.Structure> strReg =
+				server.getRegistryManager().getOrThrow(RegistryKeys.STRUCTURE);
+		for (var e : starts.entrySet()) {
+			Identifier id = strReg.getId(e.getKey());
+			if (id == null || !id.getPath().startsWith("village_")) continue;
+			if (e.getValue().getChildren().isEmpty()) continue; // пустой старт — не деревня
+			enqueuePending(server, chunk.getPos().getCenterX(), chunk.getPos().getCenterZ());
+			return;
+		}
+	}
+
+	private static void enqueuePending(MinecraftServer server, int x, int z) {
+		VillageState st = state(server);
+		NbtList pending = st.data().getListOrEmpty("pendingV");
+		for (int i = 0; i < pending.size(); i++) {
+			if (pending.get(i) instanceof NbtCompound c
+					&& Nbt2.i(c, "x") == x && Nbt2.i(c, "z") == z) return;
+		}
+		NbtCompound p = new NbtCompound();
+		p.putInt("x", x);
+		p.putInt("z", z);
+		pending.add(p);
+		st.data().put("pendingV", pending);
+		st.markDirty();
+	}
+
+	/** Разбираем очередь загруженных деревенских чанков (до 2 за прогон). */
+	private static void drainPending(MinecraftServer server) {
+		VillageState st = state(server);
+		NbtList pending = st.data().getListOrEmpty("pendingV");
+		if (pending.isEmpty()) return;
+		int done = 0;
+		while (!pending.isEmpty() && done < 2) {
+			if (pending.get(0) instanceof NbtCompound c) {
+				registerVillage(server, new BlockPos(Nbt2.i(c, "x"), 64, Nbt2.i(c, "z")));
+			}
+			pending.remove(0);
+			done++;
+		}
+		st.data().put("pendingV", pending);
+		st.markDirty();
+	}
+
+	/**
+	 * Достройка: деревни, где вышка ещё не встала (чанки не были готовы)
+	 * или здания размещены не все — пробуем снова, но не вечно (30 попыток).
+	 */
+	private static void retryUnsettled(MinecraftServer server) {
+		VillageState st = state(server);
+		NbtCompound map = Nbt2.sub(st.data(), "villages");
+		boolean dirty = false;
+		for (String k : map.getKeys()) {
+			NbtCompound v = map.getCompound(k).orElseGet(NbtCompound::new);
+			boolean needTower = Nbt2.i(v, "ty") < 0;
+			boolean needBld = Nbt2.i(v, "bld") == 0 && Nbt2.i(v, "btry") < 30;
+			if (!needTower && !needBld) continue;
+			if (needTower) {
+				ensureTower(server, v);
+				dirty = true;
+			}
+			if (needBld && Nbt2.i(v, "manual") == 0) {
+				v.putInt("btry", Nbt2.i(v, "btry") + 1);
+				placeVillageBuildings(server, v);
+				if (Nbt2.i(v, "btry") >= 30) v.putInt("bld", 2); // сдались: что встало, то встало
+				dirty = true;
+			}
+			map.put(k, v);
+		}
+		if (dirty) {
+			st.data().put("villages", map);
+			st.markDirty();
+		}
 	}
 
 	/** Найти ближайшую деревню и зарегистрировать (+ вышка). Вызывается редко. */
@@ -215,6 +308,7 @@ public final class VillageManager {
 			double dz = Nbt2.i(v, "cz") - center.getZ();
 			if (dx * dx + dz * dz < 128 * 128) {
 				ensureTower(server, v);
+				if (Nbt2.i(v, "manual") == 0) placeVillageBuildings(server, v);
 				map.put(k, v);
 				st.data().put("villages", map);
 				st.markDirty();
@@ -229,10 +323,118 @@ public final class VillageManager {
 		v.putInt("ty", -1); // нет вышки
 		v.putInt("off", 0);
 		ensureTower(server, v);
+		placeVillageBuildings(server, v);
 		map.put(keyOf(center.getX(), center.getZ()), v);
 		st.data().put("villages", map);
 		st.markDirty();
 		return v;
+	}
+
+	// ------------------- Программное размещение зданий -------------------
+
+	private static final String[] BUILDING_IDS = {
+			"craftnet:village/pvz", "craftnet:village/bank",
+			"craftnet:village/factory", "craftnet:village/cafe"};
+
+	/**
+	 * Гарантированное размещение наших зданий (ПВЗ/банк/завод/кафе) рядом
+	 * с деревней через StructureTemplate.place: спавним по кольцу 16–30 м
+	 * от центра на ровных площадках, со случайным поворотом. NBT шаблоны
+	 * содержат и NPC (теги craftnet:pvz/bank/foreman/barista) — размещаются
+	 * вместе с блоками. Флаг bld: 0 = ждём, 1 = всё встало, 2 = сдалиcь.
+	 */
+	private static void placeVillageBuildings(MinecraftServer server, NbtCompound v) {
+		if (Nbt2.i(v, "bld") != 0) return;
+		ServerWorld world = server.getOverworld();
+		if (world == null) return;
+		int cx = Nbt2.i(v, "cx");
+		int cz = Nbt2.i(v, "cz");
+		int doneMask = Nbt2.i(v, "bmask"); // какие здания уже стоят
+		java.util.Random rng = new java.util.Random((cx * 73856093L) ^ (cz * 19349663L));
+		double baseAng = rng.nextDouble() * Math.PI * 2;
+		boolean anyProgress = false;
+
+		for (int i = 0; i < BUILDING_IDS.length; i++) {
+			if ((doneMask & (1 << i)) != 0) continue;
+			Optional<StructureTemplate> tplOpt = world.getStructureTemplateManager()
+					.getTemplate(Identifier.of(BUILDING_IDS[i]));
+			if (tplOpt.isEmpty()) {
+				net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Шаблон не найден: {}", BUILDING_IDS[i]);
+				continue;
+			}
+			StructureTemplate tpl = tplOpt.get();
+			boolean placedHere = false;
+			for (int attempt = 0; attempt < 10 && !placedHere; attempt++) {
+				double ang = baseAng + Math.PI / 2 * i + attempt * 0.35;
+				int r = 16 + (i % 2) * 7 + rng.nextInt(6); // 16..29
+				int x = cx + (int) Math.round(Math.cos(ang) * r);
+				int z = cz + (int) Math.round(Math.sin(ang) * r);
+				int y = flatSpotY(world, x, z);
+				if (y < 0) continue;
+
+				BlockRotation rot = BlockRotation.values()[rng.nextInt(4)];
+				StructurePlacementData data = new StructurePlacementData().setRotation(rot);
+				var size = tpl.getSize();
+				BlockPos corner = computeCorner(size.getX(), size.getZ(), x, y, z, rot);
+				try {
+					tpl.place(world, corner, corner, data, world.getRandom(), Block.NOTIFY_LISTENERS);
+					doneMask |= 1 << i;
+					placedHere = true;
+					anyProgress = true;
+				} catch (Throwable t) {
+					net.craftnet.CraftNet.LOGGER.warn("[CraftNet] Не встало здание {}: {}",
+							BUILDING_IDS[i], t.toString());
+				}
+			}
+		}
+		v.putInt("bmask", doneMask);
+		if (doneMask == 0b1111) {
+			v.putInt("bld", 1);
+			net.craftnet.CraftNet.LOGGER.info("[CraftNet] Здания размещены: {} (ПВЗ/банк/завод/кафе)",
+					Nbt2.str(v, "name"));
+		} else if (anyProgress) {
+			net.craftnet.CraftNet.LOGGER.info("[CraftNet] Здания частично: {} (маска {})",
+					Nbt2.str(v, "name"), doneMask);
+		}
+	}
+
+	/**
+	 * Угол размещения так, чтобы шаблон (после поворота) оказался рядом
+	 * с якорной точкой (якорь примерно на углу здания).
+	 */
+	private static net.minecraft.util.math.BlockPos computeCorner(int sx, int sz, int x, int y, int z,
+			BlockRotation rot) {
+		return switch (rot) {
+			case NONE -> new BlockPos(x, y, z);
+			case CLOCKWISE_180 -> new BlockPos(x + sx - 1, y, z + sz - 1);
+			case CLOCKWISE_90 -> new BlockPos(x, y, z + sx - 1);
+			case COUNTERCLOCKWISE_90 -> new BlockPos(x + sz - 1, y, z);
+		};
+	}
+
+	/**
+	 * Плоская площадка под здание: замеры высот в 9 точках (±4 м),
+	 * все чанки сгенерированы, разброс высот ≤ 2 блоков.
+	 * @return Y поверхности или -1, если место неподходящее.
+	 */
+	private static int flatSpotY(ServerWorld world, int x, int z) {
+		if (!world.isChunkLoaded(x >> 4, z >> 4)) return -1;
+		if (!world.isChunkLoaded((x + 5) >> 4, (z + 5) >> 4)) return -1;
+		if (!world.isChunkLoaded((x - 5) >> 4, (z - 5) >> 4)) return -1;
+		int min = Integer.MAX_VALUE;
+		int max = Integer.MIN_VALUE;
+		int cy = -1;
+		for (int dx = -4; dx <= 4; dx += 4) {
+			for (int dz = -4; dz <= 4; dz += 4) {
+				int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x + dx, z + dz);
+				if (y <= world.getBottomY() + 1) return -1;
+				if (dx == 0 && dz == 0) cy = y;
+				min = Math.min(min, y);
+				max = Math.max(max, y);
+			}
+		}
+		if (max - min > 2) return -1;
+		return cy;
 	}
 
 	/** Построить вышку на кольце от центра, если её нет. */
@@ -261,6 +463,7 @@ public final class VillageManager {
 			int r = 44 + (i % 3) * 6; // 44–56 блоков: рядом, но не внутри деревни
 			int x = center.getX() + (int) Math.round(Math.cos(ang) * r);
 			int z = center.getZ() + (int) Math.round(Math.sin(ang) * r);
+			if (!world.isChunkLoaded(x >> 4, z >> 4)) continue; // чанк ещё не готов — достроим позже
 			int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
 			if (y <= world.getBottomY() + 1) continue;
 			if (Math.abs(y - centerY) > 8) continue;
