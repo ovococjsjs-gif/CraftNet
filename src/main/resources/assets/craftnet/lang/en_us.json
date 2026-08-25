@@ -61,6 +61,7 @@
   "craftnet.pvz.incoming_total": "total %s CR",
   "craftnet.pvz.sold": "Listed for sale: %s ×%s → %s CR (payout in ~%s s)",
   "craftnet.pvz.title": "Pickup Point",
+  "craftnet.shop.batch_limit": "Too many lines: max 8 per order",
   "craftnet.shop.no_village": "No online village nearby for delivery.",
   "craftnet.shop.ordered": "Order placed: %s ×%s → pickup point «%s». ETA ~%s s.",
   "craftnet.shop.ordered_batch": "Order accepted: %s items for %s CR — delivery to %s (~%s s).",

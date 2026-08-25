@@ -399,6 +399,7 @@ public class PhoneScreen extends CraftNetScreen {
 			});
 			// клик по строке каталога — добавить позицию в корзину (батч-заказ)
 			clickable(x + 8, ry, PW - 78, 20, () -> {
+				if (!cart.containsKey(fid) && cart.size() >= 8) return; // сервер берёт ≤8 позиций
 				long[] line = cart.computeIfAbsent(fid, k -> new long[]{0, unit});
 				line[0] = Math.min(640, line[0] + buyCount);
 			});

@@ -82,6 +82,7 @@ public final class StatsManager {
 
 	/** Инкремент счётчика (+ проверка достижений). */
 	public static void bump(MinecraftServer server, UUID id, String key, long delta) {
+		migrateSeason(server, id); // базлайны — от значений ДО изменения, иначе первый бамп сезона потеряется
 		StatsState st = state(server);
 		NbtCompound rec = rec(st, id);
 		rec.putLong(key, Nbt2.lng(rec, key) + delta);
@@ -91,6 +92,7 @@ public final class StatsManager {
 
 	/** Установка значения «текущее состояние» (например, баланс). Проверяет ачивки при изменении. */
 	public static void set(MinecraftServer server, UUID id, String key, long value) {
+		migrateSeason(server, id);
 		StatsState st = state(server);
 		NbtCompound rec = rec(st, id);
 		if (Nbt2.lng(rec, key) == value) return;
@@ -268,27 +270,40 @@ public final class StatsManager {
 	}
 
 	/**
-	 * Прогресс челленджей и выдача призов. Сезон хранится в rec.ch: при смене
-	 * сезона базлайны счётчиков сбрасываются текущими значениями, а done-флаги
-	 * обнуляются. Лениво: бездействующий игрок «пересядет» на новый сезон при
-	 * первом же bump()/set() (или при открытии профиля).
+	 * Пересадка игрока на новый сезон: базлайны счётчиков активных челленджей
+	 * фиксируются ТЕКУЩИМИ значениями, done-флаги обнуляются. Лениво:
+	 * бездействующий игрок «пересядет» при первом же bump()/set() или
+	 * открытии профиля. Важно вызывать ДО мутации счётчиков — если базлайн
+	 * сядет на значение уже с учётом изменения, первый бамп сезона будет
+	 * проглочен и игрок потеряет шаг прогресса.
+	 */
+	private static void migrateSeason(MinecraftServer server, UUID id) {
+		long season = seasonOf(server);
+		StatsState st = state(server);
+		NbtCompound rec = rec(st, id);
+		NbtCompound ch = Nbt2.sub(rec, "ch");
+		if (ch.getLong("season", Long.MIN_VALUE) == season) return;
+		ch = new NbtCompound();
+		ch.putLong("season", season);
+		for (Challenge c : activeChallenges(season)) {
+			ch.putLong("b_" + c.key(), Nbt2.lng(rec, c.key()));
+		}
+		rec.put("ch", ch);
+		saveRec(st, id, rec);
+	}
+
+	/**
+	 * Прогресс челленджей и выдача призов. Миграция сезона — в migrateSeason
+	 * (уже выполнена к моменту вызова из bump/set/profileView); приз берётся
+	 * один раз за сезон, прогресс = прирост счётчика от базлайна.
 	 */
 	public static void checkChallenges(MinecraftServer server, UUID id) {
+		migrateSeason(server, id);
 		StatsState st = state(server);
 		NbtCompound rec = rec(st, id);
 		long season = seasonOf(server);
 		List<Challenge> active = activeChallenges(season);
 		NbtCompound ch = Nbt2.sub(rec, "ch");
-		if (ch.getLong("season", Long.MIN_VALUE) != season) {
-			ch = new NbtCompound();
-			ch.putLong("season", season);
-			for (Challenge c : active) {
-				ch.putLong("b_" + c.key(), Nbt2.lng(rec, c.key()));
-			}
-			rec.put("ch", ch);
-			saveRec(st, id, rec);
-			return; // переходный тик: прогресс ещё нулевой
-		}
 		NbtCompound done = Nbt2.sub(ch, "d");
 		boolean awarded = false;
 		long bonusXp = 0;

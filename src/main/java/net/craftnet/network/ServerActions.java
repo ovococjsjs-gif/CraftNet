@@ -330,7 +330,11 @@ public final class ServerActions {
 			return;
 		}
 		var lines = args.getListOrEmpty("items");
-		if (lines.isEmpty() || lines.size() > 8) return;
+		if (lines.isEmpty()) return;
+		if (lines.size() > 8) {
+			player.sendMessage(Text.translatable("craftnet.shop.batch_limit"), false);
+			return;
+		}
 		// валидация всех позиций заранее — батч атомарен: либо всё, либо ничего
 		List<ItemStack> stacks = new ArrayList<>();
 		long total = 0;
