@@ -25,6 +25,7 @@ import net.craftnet.econ.MoneyManager;
 import net.craftnet.econ.PriceManager;
 import net.craftnet.item.ModItems;
 import net.craftnet.state.JobsState;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
 import net.craftnet.village.VillageManager;
 
@@ -355,6 +356,7 @@ public final class JobManager {
 				if (parts >= partsNeed) {
 					long pay = Nbt2.lng(data, "pay");
 					MoneyManager.add(server, player.getUuid(), pay, "работа: завод");
+					payStats(server, player.getUuid(), StatsManager.JOBS_FACTORY, pay);
 					player.sendMessage(Text.translatable("craftnet.job.paid", pay, "завод"), false);
 					player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
 					saveRec(st, player.getUuid(), new NbtCompound());
@@ -413,6 +415,8 @@ public final class JobManager {
 		long pay = Nbt2.lng(data, "pay");
 		MoneyManager.add(server, player.getUuid(), pay,
 				T_COOK.equals(type) ? "работа: повар" : "работа: цех");
+		payStats(server, player.getUuid(),
+				T_COOK.equals(type) ? StatsManager.JOBS_COOK : StatsManager.JOBS_FACTORY, pay);
 		player.sendMessage(Text.translatable("craftnet.job.paid", pay,
 				T_COOK.equals(type) ? "повар" : "цех"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
@@ -446,6 +450,8 @@ public final class JobManager {
 		long pay = Nbt2.lng(Nbt2.sub(rec, "data"), "pay");
 		MoneyManager.add(server, player.getUuid(), pay,
 				T_LOADER.equals(type) ? "работа: грузчик" : "работа: курьер");
+		payStats(server, player.getUuid(),
+				T_LOADER.equals(type) ? StatsManager.JOBS_LOADER : StatsManager.JOBS_COURIER, pay);
 		player.sendMessage(Text.translatable("craftnet.job.paid", pay,
 				T_LOADER.equals(type) ? "грузчик" : "курьер"), false);
 		player.playSound(net.minecraft.sound.SoundEvents.ENTITY_PLAYER_LEVELUP, 0.6f, 1.2f);
@@ -502,6 +508,8 @@ public final class JobManager {
 			}
 
 			long total = fee + matLoss;
+			StatsManager.bump(server, player, StatsManager.JOBS_CANCELED, 1);
+			StatsManager.bump(server, player, StatsManager.FINES_PAID, total);
 			if (total > 0) {
 				long bal = MoneyManager.balance(server, player);
 				MoneyManager.add(server, player, -Math.min(bal, total), "штраф за срыв смены");
@@ -515,6 +523,14 @@ public final class JobManager {
 		saveRec(st, player, new NbtCompound());
 		ServerPlayerEntity p = server.getPlayerManager().getPlayer(player);
 		if (p != null) p.sendMessage(Text.translatable(msgKey), false);
+	}
+
+	/** Единая точка статистики оплаченной смены: счётчики + опыт. */
+	private static void payStats(MinecraftServer server, UUID player, String jobCounterKey, long pay) {
+		StatsManager.bump(server, player, StatsManager.JOBS_DONE, 1);
+		StatsManager.bump(server, player, jobCounterKey, 1);
+		StatsManager.bump(server, player, StatsManager.EARN_JOBS, pay);
+		StatsManager.addXp(server, player, Math.max(1, pay / 10));
 	}
 
 	// -------------------- цели/подсветка/навигация --------------------

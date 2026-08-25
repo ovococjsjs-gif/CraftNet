@@ -14,6 +14,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import net.craftnet.state.StocksState;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
 
 /**
@@ -280,9 +281,11 @@ public final class StocksManager {
 				if (n <= 0) continue; // нет акций — нет дивидендов, точка
 				double price = price(comps(st.data()).getCompound(c.id).orElseGet(NbtCompound::new));
 				long pay = Math.min(10_000, Math.round(price * n * c.divYield));
-				if (pay <= 0) continue;
-				MoneyManager.add(server, uuid, pay, "дивиденды " + c.id);
-				total += pay;
+			if (pay <= 0) continue;
+			MoneyManager.add(server, uuid, pay, "дивиденды " + c.id);
+			StatsManager.bump(server, uuid, StatsManager.DIVIDENDS, pay);
+			StatsManager.bump(server, uuid, StatsManager.STOCKS_EARN, pay);
+			total += pay;
 				if (dbg.length() > 0) dbg.append(", ");
 				dbg.append(c.id).append("×").append(n).append("=+").append(pay);
 			}
@@ -338,6 +341,8 @@ public final class StocksManager {
 		long cost = Math.max(1, Math.round(price * n * (1 + SPREAD)));
 		if (!MoneyManager.tryCharge(server, player, cost, "акции " + c.id)) return false;
 		setOwned(server, player, c.id, owned(server, player, c.id) + n);
+		StatsManager.bump(server, player, StatsManager.STOCKS_BOUGHT, n);
+		StatsManager.addXp(server, player, 2);
 		return true;
 	}
 
@@ -351,6 +356,7 @@ public final class StocksManager {
 		long gain = Math.max(1, Math.round(price * n * (1 - SPREAD)));
 		setOwned(server, player, c.id, have - n);
 		MoneyManager.add(server, player, gain, "акции " + c.id);
+		StatsManager.bump(server, player, StatsManager.STOCKS_EARN, gain);
 		return gain;
 	}
 

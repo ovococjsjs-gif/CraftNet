@@ -30,6 +30,7 @@ import net.craftnet.item.BanknoteItem;
 import net.craftnet.item.ModItems;
 import net.craftnet.jobs.JobManager;
 import net.craftnet.orders.OrderManager;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.village.SignalLevel;
 import net.craftnet.village.VillageManager;
 
@@ -193,6 +194,9 @@ public final class ServerActions {
 					return;
 				}
 				if (MoneyManager.transfer(server, player.getUuid(), target.getUuid(), amount)) {
+					StatsManager.bump(server, player.getUuid(), StatsManager.TRANSFERS_SENT, amount);
+					StatsManager.bump(server, target.getUuid(), StatsManager.TRANSFERS_GOT, amount);
+					StatsManager.addXp(server, player.getUuid(), 2);
 					player.sendMessage(Text.translatable("craftnet.bank.transfer.ok", amount, to), false);
 					target.sendMessage(Text.translatable("craftnet.bank.transfer.got", amount, player.getName().getString()), false);
 				} else {
@@ -241,6 +245,8 @@ public final class ServerActions {
 		OrderManager.newDelivery(server, player.getUuid(), stack,
 				net.craftnet.util.Nbt2.i(v, "cx"), net.craftnet.util.Nbt2.i(v, "cy"),
 				net.craftnet.util.Nbt2.i(v, "cz"), net.craftnet.util.Nbt2.str(v, "name"), ready);
+		StatsManager.bump(server, player.getUuid(), StatsManager.ORDERS_BOUGHT, 1);
+		StatsManager.addXp(server, player.getUuid(), 3);
 		player.sendMessage(Text.translatable("craftnet.shop.ordered",
 				count, stack.getName().getString(), net.craftnet.util.Nbt2.str(v, "name"),
 				Math.max(1, (ready - server.getOverworld().getTime()) / 20)), false);
@@ -342,6 +348,8 @@ public final class ServerActions {
 				long ready = server.getOverworld().getTime() + (long) OrderManager.BASE_TRAVEL_TICKS * mult;
 				String name = new ItemStack(item).getName().getString();
 				OrderManager.newPayout(server, player.getUuid(), value, name + " ×" + count, ready);
+				StatsManager.bump(server, player.getUuid(), StatsManager.ITEMS_SOLD, count);
+				StatsManager.addXp(server, player.getUuid(), Math.max(1, Math.min(10, value / 100)));
 				player.sendMessage(Text.translatable("craftnet.pvz.sold", count, name, value), false);
 			}
 			case "market_list" -> {
@@ -475,6 +483,9 @@ public final class ServerActions {
 			boolean sky = p.getEntityWorld().isSkyVisible(p.getBlockPos());
 			d.putInt("gps", (y >= 55 || sky) ? 1 : 0);
 			d.putLong("bal", MoneyManager.balance(server, p.getUuid()));
+			// «Миллионер» и будущие balance-driven ачивки живут off-HUD-пульса
+			StatsManager.set(server, p.getUuid(), StatsManager.BALANCE_NOW,
+					MoneyManager.balance(server, p.getUuid()));
 			NbtCompound nav = JobManager.navTarget(server, p.getUuid());
 			if (!nav.isEmpty()) d.put("jobNav", nav);
 			ServerPlayNetworking.send(p, new ModPackets.HudSyncS2CPayload(d));

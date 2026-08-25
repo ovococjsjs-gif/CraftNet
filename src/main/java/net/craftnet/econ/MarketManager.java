@@ -17,6 +17,7 @@ import net.minecraft.util.math.BlockPos;
 import net.craftnet.jobs.JobManager;
 import net.craftnet.orders.OrderManager;
 import net.craftnet.state.MarketState;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
 
 /**
@@ -115,6 +116,7 @@ public final class MarketManager {
 		list.add(l);
 		st.data().put("lots", list);
 		st.markDirty();
+		StatsManager.bump(server, player.getUuid(), StatsManager.MARKET_LISTED, 1);
 		return 0;
 	}
 
@@ -164,6 +166,8 @@ public final class MarketManager {
 		list.remove(idx);
 		st.data().put("lots", list);
 		st.markDirty();
+		StatsManager.bump(server, buyer.getUuid(), StatsManager.MARKET_BOUGHT, 1);
+		StatsManager.addXp(server, buyer.getUuid(), 3);
 		return BUY_OK;
 	}
 

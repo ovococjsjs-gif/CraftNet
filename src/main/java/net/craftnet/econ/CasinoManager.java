@@ -20,6 +20,7 @@ import net.minecraft.util.Identifier;
 
 import net.craftnet.jobs.JobManager;
 import net.craftnet.state.CasinoState;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
 
 /**
@@ -177,7 +178,13 @@ public final class CasinoManager {
 		boolean win = RNG.nextInt(10000) < bp;
 		String pct = String.format(Locale.ROOT, "%.1f", bp / 100.0);
 		String tname = new ItemStack(target).getName().getString();
+		StatsManager.bump(server, player.getUuid(), StatsManager.SPINS, 1);
+		StatsManager.bump(server, player.getUuid(), StatsManager.CASINO_WAGERED, stake);
+		StatsManager.addXp(server, player.getUuid(), 1);
 		if (win) {
+			StatsManager.bump(server, player.getUuid(), StatsManager.SPIN_WINS, 1);
+			StatsManager.bump(server, player.getUuid(), StatsManager.CASINO_WON, targetVal);
+			StatsManager.addXp(server, player.getUuid(), 15);
 			player.getInventory().offerOrDrop(new ItemStack(target));
 			player.sendMessage(Text.translatable("craftnet.casino.win", tname, pct), false);
 			player.playSound(SoundEvents.ENTITY_PLAYER_LEVELUP, 0.7f, 1.3f);

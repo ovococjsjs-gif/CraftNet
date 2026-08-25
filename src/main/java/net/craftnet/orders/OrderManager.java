@@ -16,6 +16,7 @@ import net.minecraft.text.Text;
 
 import net.craftnet.econ.MoneyManager;
 import net.craftnet.state.OrdersState;
+import net.craftnet.stats.StatsManager;
 import net.craftnet.util.Nbt2;
 
 /**
@@ -134,6 +135,8 @@ public final class OrderManager {
 				UUID owner = UUID.fromString(ownerStr);
 				long amount = o.getLong("payout", 0L);
 				MoneyManager.add(server, owner, amount, "продажа онлайн");
+				StatsManager.bump(server, owner, StatsManager.EARN_SALES, amount);
+				StatsManager.addXp(server, owner, Math.max(1, Math.min(15, amount / 150)));
 				ServerPlayerEntity p = server.getPlayerManager().getPlayer(owner);
 				if (p != null) {
 					p.sendMessage(Text.translatable("craftnet.payout.arrived", amount,
@@ -205,6 +208,8 @@ public final class OrderManager {
 			ItemStack stack = decodeStack(server, Nbt2.sub(o, "item"));
 			if (stack.isEmpty()) return false;
 			player.getInventory().offerOrDrop(stack);
+			StatsManager.bump(server, player.getUuid(), StatsManager.PARCELS, 1);
+			StatsManager.addXp(server, player.getUuid(), 2);
 			NbtList nl = (NbtList) list.copy();
 			nl.remove(i);
 			st.data().put("orders", nl);
